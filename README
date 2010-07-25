@@ -1,0 +1,3 @@
+A somewhat saner harness for running code in the kernel.
+
+http://github.com/esden/summon-arm-toolchain required.
