@@ -1,5 +1,5 @@
 SECTIONS {
-    . = 0xc076c000;
+    . = 0xc06ed000;
     .init : { *(.init) }
     /DISCARD/ : { *(.comment); *(.ARM.attributes) }
 }

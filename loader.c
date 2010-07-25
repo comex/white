@@ -2,9 +2,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <assert.h>
-#include <sys/syscall.h>
-#include <unistd.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 struct proc;
 // copied from xnu
@@ -28,22 +27,20 @@ struct sysent {     /* system call table */
 
 // end copied
 
-#define SCRATCH 0xc076c000
+#define SCRATCH 0xc06ed000
 #define SYSENT 0xc0255924
 
 // search for 01 00 00 00 0c 00 00 00
 
-struct sysent my_sysent = { 1, 0, 0, (void *) (SCRATCH | 1), NULL, NULL, _SYSCALL_RET_INT_T, 3 * sizeof(uint32_t) };
+struct sysent my_sysent = { 1, 0, 0, (void *) (SCRATCH | 1), NULL, NULL, _SYSCALL_RET_INT_T, 4 * sizeof(uint32_t) };
 
-int mysyscall(uint32_t a, uint32_t b, uint32_t c) {
-    return syscall(8, a, b, c);
-}
 
 int main() {
     assert(sizeof(struct sysent) == 0x18);
     int fd = open("kcode.bin", O_RDONLY);
     assert(fd > 0);
     off_t size = lseek(fd, 0, SEEK_END);
+    assert(size > 0);
     lseek(fd, 0, SEEK_SET);
     char *buf = malloc(size);
     assert(read(fd, buf, size) == size);
@@ -51,6 +48,13 @@ int main() {
     assert(k > 0);
     assert(pwrite(k, buf, size, SCRATCH) == size);
     assert(pwrite(k, &my_sysent, sizeof(struct sysent), SYSENT + 8 * sizeof(struct sysent)) == sizeof(struct sysent));
-    printf("ok I wrote it\n"); sleep(3);
-    printf("%d\n", mysyscall(0, 0, 0));
+    close(k);
+    
+    char *buf2 = malloc(size);
+    int l = open("/dev/kmem", O_RDONLY);
+    assert(l > 0);
+    assert(pread(l, buf2, size, SCRATCH) == size);
+    assert(!memcmp(buf, buf2, size));
+    close(l);
+    return 0;
 }
