@@ -45,6 +45,14 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         delete_object(descriptor);
         break;
     }
+    case 2: { // more realistic read
+        *retval = copyout((void *) uap->b, (user_addr_t) uap->d, uap->c);
+        break;
+    }
+    case 3: { // read32 just in case
+        *retval = *((int32_t *) uap->b);
+        break;
+    }
     default:
         IOLog("Unknown mode %d\n", uap->mode);
         break;

@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 
 int get_regs(uint32_t *ttbr0, uint32_t *ttbr1, uint32_t *ttbcr) {
     return syscall(8, 0, ttbr0, ttbr1, ttbcr);
@@ -12,6 +13,14 @@ int get_regs(uint32_t *ttbr0, uint32_t *ttbr1, uint32_t *ttbcr) {
 
 int copy_phys(uint32_t paddr, uint32_t size, void *buf) {
     return syscall(8, 1, paddr, size, buf);
+}
+
+int kread(uint32_t addr, uint32_t size, void *buf) {
+    return syscall(8, 2, addr, size, buf);
+}
+
+uint32_t read32(uint32_t addr) {
+    return syscall(8, 3, addr);
 }
 
 static const char *cacheable(uint32_t flags) {
@@ -74,7 +83,7 @@ static void dump_pagetable(uint32_t ttbr, uint32_t baseaddr, uint32_t size) {
         printf("%08x: ", baseaddr + i * 0x100000);
         switch(l1desc & 3) {
         case 1: {
-            printf("coarse page table base=%x P=%d domain=%d\n", l1desc & ~0x3ff, (l1desc & (1 << 9)) & 1, (l1desc >> 5) & 0xf);
+            printf("page table base=%x P=%d domain=%d\n", l1desc & ~0x3ff, (l1desc & (1 << 9)) & 1, (l1desc >> 5) & 0xf);
             unsigned int data2[256];
             memset(data2, 0xff, sizeof(data2));
             assert(!copy_phys(l1desc & ~0x3ff, sizeof(data2), data2));
@@ -83,30 +92,27 @@ static void dump_pagetable(uint32_t ttbr, uint32_t baseaddr, uint32_t size) {
                 if((l2desc & 3) == 0) continue; // fault
                 printf("  %08x: ", baseaddr + (i * 0x100000) + (j * 0x1000));
                 switch(l2desc & 3) {
+                case 0:
+                    printf("fault\n");
+                    break;
                 case 1:
-                    printf("large base=%x [%s] AP0=%s AP1=%s AP2=%s AP3=%s\n",
+                    printf("large base=%x [%s] XN=%x nG=%x S=%x AP=%s\n",
                         l2desc & 0xffff0000,
                         tex(l2desc >> 12, l2desc >> 3, l2desc >> 2),
-                        ap(l2desc >> 4),
-                        ap(l2desc >> 6),
-                        ap(l2desc >> 8),
-                        ap(l2desc >> 10));
+                        (l2desc >> 15) & 1,
+                        (l2desc >> 11) & 1,
+                        (l2desc >> 10) & 1,
+                        ap(((l2desc >> 7) & 4) | ((l2desc >> 4) & 3)));
                     break;
                 case 2:
-                    printf("small base=%x AP0=%s AP1=%s AP2=%s AP3=%s C=%d B=%d\n",
-                        l2desc & 0xfffff000,
-                        ap(l2desc >> 4),
-                        ap(l2desc >> 6),
-                        ap(l2desc >> 8),
-                        ap(l2desc >> 10),
-                        (l2desc >> 3) & 1,
-                        (l2desc >> 2) & 1);
-                    break;
                 case 3:
-                    printf("extended small base=%x [%s] AP=%s\n",
+                    printf("small base=%x [%s] XN=%x nG=%x S=%x AP=%s\n",
                         l2desc & 0xfffff00,
                         tex(l2desc >> 6, l2desc >> 3, l2desc >> 2),
-                        ap(l2desc >> 4));
+                        l2desc & 1,
+                        (l2desc >> 11) & 1,
+                        (l2desc >> 10) & 1,
+                        ap(((l2desc >> 7) & 4) | ((l2desc >> 4) & 3)));
                     break;
                 }
             }
@@ -140,6 +146,7 @@ int main() {
     printf("%x\n", get_regs(&ttbr0, &ttbr1, &ttbcr));
     printf("ttbr0=%x ttbr1=%x ttbcr=%x\n", ttbr0, ttbr1, ttbcr);
 
-    //dump_pagetable(ttbr0, 0, 4096);
-    dump_pagetable(ttbr1, 0, 16384);
+    dump_pagetable(ttbr0, 0, 4096);
+    //dump_pagetable(ttbr1, 0, 16384);
+    //
 }
