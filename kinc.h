@@ -23,6 +23,9 @@ asm("_ZN18IOMemoryDescriptor19withPhysicalAddressEmm11IODirection");
 LC void *IOMemoryDescriptor_map(void *descriptor, unsigned int options)
 asm("_ZN18IOMemoryDescriptor3mapEm");
 
+LC void *IOMemoryDescriptor_getPhysicalAddress(void *descriptor)
+asm("_ZN18IOMemoryDescriptor18getPhysicalAddressEv");
+
 LC void *IOMemoryMap_getAddress(void *map)
 asm("_ZN11IOMemoryMap10getAddressEv");
 

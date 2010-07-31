@@ -8,6 +8,7 @@
 #include <sys/mman.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
 
 int get_regs(uint32_t *ttbr0, uint32_t *ttbr1, uint32_t *ttbcr, uint32_t *contextidr) {
     return syscall(8, 0, ttbr0, ttbr1, ttbcr, contextidr);
@@ -117,7 +118,7 @@ static void dump_pagetable(uint32_t ttbr, uint32_t baseaddr, uint32_t size) {
                 case 2:
                 case 3:
                     printf("small base=%x [%s] XN=%x nG=%x S=%x AP=%s\n",
-                        l2desc & 0xfffff00,
+                        l2desc & 0xfffff000,
                         tex(l2desc >> 6, l2desc >> 3, l2desc >> 2),
                         l2desc & 1,
                         (l2desc >> 11) & 1,
@@ -152,6 +153,7 @@ static void dump_pagetable(uint32_t ttbr, uint32_t baseaddr, uint32_t size) {
 
 int main(int argc, char **argv) {
     int c;
+    bool did_something = false;
     uint32_t ttbr0, ttbr1, ttbcr, contextidr;
     assert(!get_regs(&ttbr0, &ttbr1, &ttbcr, &contextidr));
     
@@ -159,18 +161,22 @@ int main(int argc, char **argv) {
     switch(c) {
     case 'r': {
         printf("ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x\n", ttbr0, ttbr1, ttbcr, contextidr);
+        did_something = true;
         break;
     }
     case '0': {
         dump_pagetable(ttbr0, 0, 4096);
+        did_something = true;
         break;
     }
     case '1': {
-        dump_pagetable(ttbr0, 0, 4096);
+        dump_pagetable(ttbr1, 0, 16384);
+        did_something = true;
         break;
     }
     case 's': {
         assert(!log_iosurfaces());
+        did_something = true;
         break;
     }
     case '?':
@@ -178,4 +184,10 @@ int main(int argc, char **argv) {
         printf("Usage: %s [-r] [-0] [-1] [-s]\n", argv[0]);
         return 1;
     }
+
+    if(!did_something) {
+        printf("Usage: %s [-r] [-0] [-1] [-s]\n", argv[0]);
+        return 1;
+    }
+    return 0;
 }

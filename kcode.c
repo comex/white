@@ -8,33 +8,39 @@ struct mysyscall_args {
     uint32_t e;
 };
 
-static void list_iosurfaces() {
-    void *reg_entry = IORegistryEntry_fromPath("IOService/Root/N18AP/IOResources/IOCoreSurfaceRoot", NULL, NULL, NULL, NULL);
+static int list_iosurfaces() {
+    void *reg_entry = IORegistryEntry_fromPath("IOService:/IOResources/IOCoreSurfaceRoot", NULL, NULL, NULL, NULL);
     if(!reg_entry) {
         IOLog("No reg_entry...\n");
-        return;
+        return 1;
     }
     int highest_number = prop(reg_entry, 0x84, int);
     void **root = prop(reg_entry, 0x80, void **);
     IOLog("highest_number: %d\n", highest_number);
-    IOLog("root: %p\n", root);
-    return;
-    for(int i = 0; i <= highest_number; i++) {
+    //IOLog("root: %p\n", root);
+    for(int i = 0; i < highest_number; i++) {
         void *surface = root[i];
+        if(!surface) continue;
         int its_id = prop(surface, 8, int);
         char global = prop(surface, 0x15, char);
         int owner = prop(surface, 0x44, int);
         int width = prop(surface, 0x58, int);
         int height = prop(surface, 0x5c, int);
+        int allocsize = prop(surface, 0x74, int);
         void *vt = prop(surface, 0, void *);
+        
+        void *md = prop(surface, 0x24, void *);
+        void *phys = (md && prop(md, 0, unsigned int) == 0x802340e4) ? IOMemoryDescriptor_getPhysicalAddress(md) : NULL;
+        unsigned int vram = phys ? ((unsigned int) phys - 0x4fd00000) : (unsigned int) -1;
 
-        IOLog("%d: %p vt=%p id=%d global=%hhd owner=%d %dx%d\n", i, surface, vt, its_id, global, owner, width, height);
+        IOLog("%d: %p vt=%p id=%d global=%d owner=%x %dx%d allocsize=%d @vram=%u\n", i, surface, vt, its_id, (int) global, owner, width, height, allocsize, vram);
     }
+    return 0;
 }
 
 int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
 {
-    IOLog("Hi mode=%d\n", uap->mode);
+    //IOLog("Hi mode=%d\n", uap->mode);
     switch(uap->mode) {
     case 0: { // get regs
         unsigned int ttbr0, ttbr1, ttbcr, contextidr;
@@ -47,7 +53,7 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         if(error = copyout(&ttbr1, (user_addr_t) uap->c, sizeof(ttbr1))) return error;
         if(error = copyout(&ttbcr, (user_addr_t) uap->d, sizeof(ttbcr))) return error;
         if(error = copyout(&contextidr, (user_addr_t) uap->e, sizeof(contextidr))) return error;
-        IOLog("ttbr0=%x ttbr1=%x, ttbcr=%x\n", ttbr0, ttbr1, ttbcr);
+        //IOLog("ttbr0=%x ttbr1=%x, ttbcr=%x\n", ttbr0, ttbr1, ttbcr);
         break;
     }
     case 1: { // copy physical data
@@ -75,8 +81,7 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         break;
     }
     case 5: { // list IOSurfaces
-        list_iosurfaces();
-        *retval = 0;
+        *retval = list_iosurfaces();
         break;
     }
     default:
