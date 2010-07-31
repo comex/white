@@ -1,4 +1,4 @@
-import mmap, os, struct, re
+import mmap, os, struct, re, sys
 # ripped from config.py
 
 class macho:
@@ -40,15 +40,20 @@ class macho:
                 n_value |= 1
             yield psym, n_value
 
-filename = '/Users/comex/star/bs/iPad1,1_3.2.1/kern'
+filename = sys.argv[1]
 fp = open(filename, 'rb')
 stuff = mmap.mmap(fp.fileno(), os.path.getsize(filename), prot=mmap.PROT_READ)
 m = macho(filename, stuff)
 
 out = open('nm.ld', 'w')
 
-out.write(open('base.ld').read())
-
+out.write('''SECTIONS {
+    . = %s;
+    .init : { *(.init) }
+    /DISCARD/ : { *(.comment); *(.ARM.attributes) }
+}
+''' % sys.argv[2])
+      
 for a, b in m.get_syms():
     if a.startswith('_') and re.match('^[a-zA-Z0-9_@\$]{2,}$', a):
         print >> out, '%s = 0x%08x;' % (a[1:], b)

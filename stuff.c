@@ -6,9 +6,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <errno.h>
+#include <fcntl.h>
 
-int get_regs(uint32_t *ttbr0, uint32_t *ttbr1, uint32_t *ttbcr) {
-    return syscall(8, 0, ttbr0, ttbr1, ttbcr);
+int get_regs(uint32_t *ttbr0, uint32_t *ttbr1, uint32_t *ttbcr, uint32_t *contextidr) {
+    return syscall(8, 0, ttbr0, ttbr1, ttbcr, contextidr);
 }
 
 int copy_phys(uint32_t paddr, uint32_t size, void *buf) {
@@ -21,6 +23,14 @@ int kread(uint32_t addr, uint32_t size, void *buf) {
 
 uint32_t read32(uint32_t addr) {
     return syscall(8, 3, addr);
+}
+
+int crash_kernel() {
+    return syscall(8, 4);
+}
+
+int log_iosurfaces() {
+    return syscall(8, 5);
 }
 
 static const char *cacheable(uint32_t flags) {
@@ -140,13 +150,32 @@ static void dump_pagetable(uint32_t ttbr, uint32_t baseaddr, uint32_t size) {
     }
 }
 
-int main() {
-    uint32_t ttbr0, ttbr1, ttbcr;
-    ttbr0 = ttbr1 = ttbcr = 0;
-    printf("%x\n", get_regs(&ttbr0, &ttbr1, &ttbcr));
-    printf("ttbr0=%x ttbr1=%x ttbcr=%x\n", ttbr0, ttbr1, ttbcr);
-
-    dump_pagetable(ttbr0, 0, 4096);
-    //dump_pagetable(ttbr1, 0, 16384);
-    //
+int main(int argc, char **argv) {
+    int c;
+    uint32_t ttbr0, ttbr1, ttbcr, contextidr;
+    assert(!get_regs(&ttbr0, &ttbr1, &ttbcr, &contextidr));
+    
+    while((c = getopt(argc, argv, "r01s")) != -1)
+    switch(c) {
+    case 'r': {
+        printf("ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x\n", ttbr0, ttbr1, ttbcr, contextidr);
+        break;
+    }
+    case '0': {
+        dump_pagetable(ttbr0, 0, 4096);
+        break;
+    }
+    case '1': {
+        dump_pagetable(ttbr0, 0, 4096);
+        break;
+    }
+    case 's': {
+        assert(!log_iosurfaces());
+        break;
+    }
+    case '?':
+    default:
+        printf("Usage: %s [-r] [-0] [-1] [-s]\n", argv[0]);
+        return 1;
+    }
 }

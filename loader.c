@@ -27,12 +27,9 @@ struct sysent {     /* system call table */
 
 // end copied
 
-#define SCRATCH 0xc06ed000
-#define SYSENT 0xc0255924
-
 // search for 01 00 00 00 0c 00 00 00
 
-struct sysent my_sysent = { 1, 0, 0, (void *) (SCRATCH | 1), NULL, NULL, _SYSCALL_RET_INT_T, 4 * sizeof(uint32_t) };
+struct sysent my_sysent = { 1, 0, 0, (void *) (SCRATCH | 1), NULL, NULL, _SYSCALL_RET_INT_T, 5 * sizeof(uint32_t) };
 
 
 int main() {

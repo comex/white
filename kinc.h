@@ -26,6 +26,22 @@ asm("_ZN18IOMemoryDescriptor3mapEm");
 LC void *IOMemoryMap_getAddress(void *map)
 asm("_ZN11IOMemoryMap10getAddressEv");
 
+LC void *IORegistryEntry_fromPath(const char *name, void *plane, char *residualPath, int *residualLength, void *fromEntry)
+asm("_ZN15IORegistryEntry8fromPathEPKcPK15IORegistryPlanePcPiPS_");
+
 static inline void delete_object(void *object) {
     ((void (***)(void *)) object)[0][1](object);
 }
+
+static inline void release_object(void *object) {
+    ((void (***)(void *)) object)[0][2](object);
+}
+
+static inline void *retain_object(void *object) {
+    ((void (***)(void *)) object)[0][4](object);
+    return object;
+}
+
+#define prop(a, off, typ) *((typ *)(((char *) (a))+(off)))
+
+#define NULL ((void *) 0)
