@@ -4,6 +4,8 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
+#include "elf.h"
 
 struct proc;
 // copied from xnu
@@ -29,29 +31,46 @@ struct sysent {     /* system call table */
 
 // search for 01 00 00 00 0c 00 00 00
 
-struct sysent my_sysent = { 1, 0, 0, (void *) (SCRATCH | 1), NULL, NULL, _SYSCALL_RET_INT_T, 5 * sizeof(uint32_t) };
+struct sysent my_sysent = { 1, 0, 0, NULL, NULL, NULL, _SYSCALL_RET_INT_T, 5 * sizeof(uint32_t) };
+
+void xread(int fd, void *buf, size_t nbyte) {
+    errno = 0;
+    int ret = read(fd, buf, nbyte);
+    if(errno) perror("xread");
+    assert(ret == nbyte);
+}
 
 
 int main() {
     assert(sizeof(struct sysent) == 0x18);
-    int fd = open("kcode.bin", O_RDONLY);
-    assert(fd > 0);
-    off_t size = lseek(fd, 0, SEEK_END);
-    assert(size > 0);
-    lseek(fd, 0, SEEK_SET);
-    char *buf = malloc(size);
-    assert(read(fd, buf, size) == size);
     int k = open("/dev/kmem", O_WRONLY);
     assert(k > 0);
-    assert(pwrite(k, buf, size, SCRATCH) == size);
+
+    Elf32_Ehdr ehdr;
+    Elf32_Shdr shdr;
+    int fd = open("kcode.elf", O_RDONLY);
+    assert(fd > 0);
+    xread(fd, &ehdr, sizeof(ehdr));
+    assert(ehdr.e_shentsize == sizeof(shdr));
+    lseek(fd, ehdr.e_shoff, SEEK_SET);
+    Elf32_Half shnum = ehdr.e_shnum;
+    while(shnum--) {
+        xread(fd, &shdr, sizeof(shdr));
+        if(shdr.sh_type == SHT_PROGBITS) {
+            if(!my_sysent.sy_call) my_sysent.sy_call = (void *) (shdr.sh_addr | 1);
+            void *buf = malloc(shdr.sh_size);
+            assert(pread(fd, buf, shdr.sh_size, shdr.sh_offset) == shdr.sh_size);
+            assert(pwrite(k, buf, shdr.sh_size, shdr.sh_addr) == shdr.sh_size);
+            free(buf);
+        } else if(shdr.sh_type == SHT_NOBITS) {
+            void *buf = calloc(1, shdr.sh_size);
+            assert(pwrite(k, buf, shdr.sh_size, shdr.sh_addr) == shdr.sh_size);
+            free(buf);
+        }
+    }
+
     assert(pwrite(k, &my_sysent, sizeof(struct sysent), SYSENT + 8 * sizeof(struct sysent)) == sizeof(struct sysent));
     close(k);
     
-    char *buf2 = malloc(size);
-    int l = open("/dev/kmem", O_RDONLY);
-    assert(l > 0);
-    assert(pread(l, buf2, size, SCRATCH) == size);
-    assert(!memcmp(buf, buf2, size));
-    close(l);
     return 0;
 }

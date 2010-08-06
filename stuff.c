@@ -34,6 +34,18 @@ int log_iosurfaces() {
     return syscall(8, 5);
 }
 
+int unhook() {
+    return syscall(8, 6);
+}
+
+int loghook_address(uint32_t addr) {
+    return syscall(8, 7, addr);
+}
+
+int vmhook_address(uint32_t addr) {
+    return syscall(8, 8, addr);
+}
+
 static const char *cacheable(uint32_t flags) {
     const char *descs[] = {
         "Non-cacheable",
@@ -151,43 +163,74 @@ static void dump_pagetable(uint32_t ttbr, uint32_t baseaddr, uint32_t size) {
     }
 }
 
+uint32_t parse_hex(const char *optarg) {
+    errno = 0;
+    long long ret = strtoll(optarg, NULL, 16);
+    if(ret != 0 || errno != EINVAL) {
+        return (uint32_t) ret;
+    } else {
+        printf("Can't parse %08x\n", (uint32_t) ret);
+        abort();
+    }
+}
+
 int main(int argc, char **argv) {
     int c;
     bool did_something = false;
     uint32_t ttbr0, ttbr1, ttbcr, contextidr;
     assert(!get_regs(&ttbr0, &ttbr1, &ttbcr, &contextidr));
     
-    while((c = getopt(argc, argv, "r01s")) != -1)
+    while((c = getopt(argc, argv, "r01sl:uh:v:")) != -1)
     switch(c) {
     case 'r': {
         printf("ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x\n", ttbr0, ttbr1, ttbcr, contextidr);
-        did_something = true;
-        break;
+        did_something = true; break;
     }
     case '0': {
         dump_pagetable(ttbr0, 0, 4096);
-        did_something = true;
-        break;
+        did_something = true; break;
     }
     case '1': {
         dump_pagetable(ttbr1, 0, 16384);
-        did_something = true;
-        break;
+        did_something = true; break;
     }
     case 's': {
         assert(!log_iosurfaces());
-        did_something = true;
-        break;
+        did_something = true; break;
+    }
+    case 'l': {
+        printf("%08x\n", read32(parse_hex(optarg)));
+        did_something = true; break;
+    }
+    case 'u': {
+        assert(!unhook());
+        did_something = true; break;
+    }
+    case 'h': {
+        assert(!loghook_address(parse_hex(optarg)));
+        did_something = true; break;
+    }
+    case 'v': {
+        assert(!vmhook_address(parse_hex(optarg)));
+        did_something = true; break; 
     }
     case '?':
     default:
-        printf("Usage: %s [-r] [-0] [-1] [-s]\n", argv[0]);
-        return 1;
+        goto usage;
     }
 
-    if(!did_something) {
-        printf("Usage: %s [-r] [-0] [-1] [-s]\n", argv[0]);
-        return 1;
-    }
+    if(!did_something) goto usage;
     return 0;
+usage:
+    printf("Usage: %s ...\n"
+           "    -r:         print some regs\n"
+           "    -0:         dump memory map at ttbr0\n"
+           "    -1:         dump memory map at ttbr1\n"
+           "    -s:         dump some info about IOSurfaces\n"
+           "    -l addr:    do a read32\n"
+           "    -u:         unhook\n"
+           "    -h addr:    hook for generic logging\n"
+           "    -v addr:    hook vm_fault_enter for logging\n"
+           , argv[0]);
+    return 1;
 }

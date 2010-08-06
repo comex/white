@@ -3,3 +3,4 @@
 .section .init
 stub:
     b mysyscall
+
