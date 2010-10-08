@@ -46,6 +46,10 @@ int vmhook_address(uint32_t addr) {
     return syscall(8, 8, addr);
 }
 
+int weirdhook_address(uint32_t addr) {
+    return syscall(8, 8, addr);
+}
+
 static const char *cacheable(uint32_t flags) {
     const char *descs[] = {
         "Non-cacheable",
@@ -214,6 +218,10 @@ int main(int argc, char **argv) {
         assert(!vmhook_address(parse_hex(optarg)));
         did_something = true; break; 
     }
+    case 'w': {
+        assert(!weirdhook_address(parse_hex(optarg)));
+        did_something = true; break; 
+    }
     case '?':
     default:
         goto usage;
@@ -231,6 +239,7 @@ usage:
            "    -u:         unhook\n"
            "    -h addr:    hook for generic logging\n"
            "    -v addr:    hook vm_fault_enter for logging\n"
+           "    -w addr:    hook weird for logging\n"
            , argv[0]);
     return 1;
 }

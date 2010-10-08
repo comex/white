@@ -28,6 +28,17 @@ int vm_fault_enter_hook(void *m, void *pmap, uint32_t vaddr, vm_prot_t prot, boo
     return vm_fault_enter_old(m, pmap, vaddr, prot, wired, change_wiring, no_cache, type_of_fault);
 }
 
+int (*weird_old)(char *buf, int size);
+int weird_hook(char *buf, int size) {
+    int ret = weird_old(buf, size);
+    IOLog("weird_old: [%x] ", size);
+    while(size--) {
+        IOLog("%02c ", *buf++);
+    }
+    IOLog("=> %d\n", ret);
+    return ret;
+}
+
 static int list_iosurfaces() {
     void *reg_entry = IORegistryEntry_fromPath("IOService:/IOResources/IOCoreSurfaceRoot", NULL, NULL, NULL, NULL);
     if(!reg_entry) {
@@ -113,6 +124,7 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
     case 6: { // unhook
         unhook(logger_old); logger_old = NULL;
         unhook(vm_fault_enter_old); vm_fault_enter_old = NULL;
+        unhook(weird_old); weird_old = NULL;
         break;
     }
     case 7: { // hook a function, log args
@@ -125,6 +137,13 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
     case 8: { // hook vm_fault_enter
         *retval = 0;
         if(!(vm_fault_enter_old = hook((void *) uap->b, vm_fault_enter_hook))) {
+            *retval = -1;
+        }
+        break;
+    }
+    case 9: { // hook weird
+        *retval = 0;
+        if(!(weird_old = hook((void *) uap->b, weird_hook))) {
             *retval = -1;
         }
         break;
