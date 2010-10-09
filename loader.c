@@ -43,6 +43,7 @@ struct mach_header *hdr, *khdr;
 struct symtab_command symtab, ksymtab;
 struct dysymtab_command dysymtab;
 uint32_t slide;
+uint32_t reloc_base;
 
 uint32_t sysent; // :<
 
@@ -135,6 +136,31 @@ void do_kern(const char *filename) {
     assert(sysent);
 }
 
+// ew, but not very important speed-wise
+static void relocate(uint32_t reloff, uint32_t nreloc) {
+    assert(reloc_base);
+    struct relocation_info *things = (void *) ((char *)hdr + reloff);
+    for(int i = 0; i < nreloc; i++) {
+        assert(!things[i].r_extern && !things[i].r_pcrel && things[i].r_length == 2);
+        assert(things[i].r_type == 0);
+        // *shrug*
+        vm_address_t thing = reloc_base + things[i].r_address;
+        uint32_t orig;
+        vm_size_t whatever;
+        kr_assert(vm_read_overwrite(kernel_task,
+                                    thing,
+                                    sizeof(uint32_t),
+                                    (vm_offset_t) &orig,
+                                    &whatever));
+        printf("%08x: %08x -> %08x\n", thing, orig, orig + slide);
+        orig += slide;
+        kr_assert(vm_write(kernel_task,
+                           thing,
+                           (vm_offset_t) &orig,
+                           sizeof(uint32_t)));
+    }
+}
+
 void do_kcode(const char *filename) {
     hdr = map_file(filename);
 
@@ -202,7 +228,7 @@ void do_kcode(const char *filename) {
     assert(false);
     it_worked:;
     printf("slide=%x\n", slide);
-                    
+
     struct nlist *syms = (void *) ((char *)hdr + symtab.symoff);
     uint32_t *indirect = (void *) ((char *)hdr + dysymtab.indirectsymoff);
 
@@ -210,6 +236,7 @@ void do_kcode(const char *filename) {
         if(cmd->cmd == LC_SEGMENT) {
             struct segment_command *seg = (void *) cmd;
             seg->vmaddr += slide;
+            if(!reloc_base) reloc_base = seg->vmaddr;
             printf("%.16s %08x\n", seg->segname, seg->vmaddr);
             struct section *sections = (void *) (seg + 1);
             for(int i = 0; i < seg->nsects; i++) {
@@ -253,12 +280,6 @@ void do_kcode(const char *filename) {
                     fprintf(stderr, "unrecognized section type %02x\n", type);
                     assert(false);
                 }
-                struct relocation_info *things = (void *) ((char *)hdr + sect->reloff);
-                for(int i = 0; i < sect->nreloc; i++) {
-                    assert(!things[i].r_extern && !things[i].r_pcrel && things[i].r_length == 2);
-                    assert(things[i].r_type == 0);
-                    *((uint32_t *) ((char *)hdr + sect->offset + things[i].r_address)) += slide;
-                }
             }
             int32_t fs = seg->filesize;
             vm_offset_t of = (vm_offset_t)hdr + seg->fileoff;
@@ -295,8 +316,19 @@ void do_kcode(const char *filename) {
                                                MATTR_CACHE,
                                                &val));
             }
+            for(int i = 0; i < seg->nsects; i++) {
+                struct section *sect = &sections[i];
+
+                // XXX: are these relocations unique, or listed also in the dysymtab?
+                // until I get one, I won't bother finding out
+                assert(sect->nreloc == 0);
+
+                relocate(sect->reloff, sect->nreloc);
+            }
         }
     }
+
+    relocate(dysymtab.locreloff, dysymtab.nlocrel);
 
     // okay, now do the fancy syscall stuff
     // how do I safely dispose of this file?

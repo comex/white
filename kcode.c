@@ -75,7 +75,7 @@ extern struct sysent sysent[];
 int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval);
 __attribute__((constructor))
 void init() {
-    IOLog("init\n");
+    IOLog("init %p\n", mysyscall);
     sysent[8] = (struct sysent){ 1, 0, 0, (void *) mysyscall, NULL, NULL, _SYSCALL_RET_INT_T, 5 * sizeof(uint32_t) };
     
 }
