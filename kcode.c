@@ -33,9 +33,9 @@ int weird_hook(char *buf, int size) {
     int ret = weird_old(buf, size);
     IOLog("weird_old: [%x] ", size);
     while(size--) {
-        IOLog("%02c ", *buf++);
+        IOLog("%02x ", (int) *buf++);
     }
-    IOLog("=> %d\n", ret);
+    IOLog("=> %x\n", ret);
     return ret;
 }
 
@@ -69,7 +69,25 @@ static int list_iosurfaces() {
     return 0;
 }
 
-__attribute__((externally_visible))
+// from the loader
+extern struct sysent sysent[];
+
+int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval);
+__attribute__((constructor))
+void init() {
+    IOLog("init\n");
+    sysent[8] = (struct sysent){ 1, 0, 0, (void *) mysyscall, NULL, NULL, _SYSCALL_RET_INT_T, 5 * sizeof(uint32_t) };
+    
+}
+
+__attribute__((destructor))
+void fini() {
+    IOLog("fini\n");
+    unhook(logger_old); logger_old = NULL;
+    unhook(vm_fault_enter_old); vm_fault_enter_old = NULL;
+    unhook(weird_old); weird_old = NULL;
+}
+
 int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
 {
     //IOLog("Hi mode=%d\n", uap->mode);
@@ -122,9 +140,7 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         break;
     }
     case 6: { // unhook
-        unhook(logger_old); logger_old = NULL;
-        unhook(vm_fault_enter_old); vm_fault_enter_old = NULL;
-        unhook(weird_old); weird_old = NULL;
+        fini();
         break;
     }
     case 7: { // hook a function, log args

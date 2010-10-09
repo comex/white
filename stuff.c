@@ -47,7 +47,7 @@ int vmhook_address(uint32_t addr) {
 }
 
 int weirdhook_address(uint32_t addr) {
-    return syscall(8, 8, addr);
+    return syscall(8, 9, addr);
 }
 
 static const char *cacheable(uint32_t flags) {
@@ -184,7 +184,7 @@ int main(int argc, char **argv) {
     uint32_t ttbr0, ttbr1, ttbcr, contextidr;
     assert(!get_regs(&ttbr0, &ttbr1, &ttbcr, &contextidr));
     
-    while((c = getopt(argc, argv, "r01sl:uh:v:")) != -1)
+    while((c = getopt(argc, argv, "r01sl:uh:v:w:")) != -1)
     switch(c) {
     case 'r': {
         printf("ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x\n", ttbr0, ttbr1, ttbcr, contextidr);

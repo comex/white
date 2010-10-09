@@ -1,7 +1,5 @@
 #include <stdint.h>
 #include <stdbool.h>
-// This is stupid and generates wasteful code, but is necessary.  The BL instruction generated otherwise treats it as ARM and ignores the least-significant bit.
-// A proper solution is apparently making the generated symbol have the right attribute, but I can't do that without... manually generating an ELF file?
 #define LC __attribute__((long_call))
 
 typedef uint32_t user_addr_t, vm_size_t, vm_address_t, boolean_t, size_t, vm_offset_t, vm_prot_t;
@@ -33,19 +31,19 @@ typedef enum IODirection {
 } IODirection; 
 
 LC void *IOMemoryDescriptor_withPhysicalAddress(unsigned long address, unsigned long withLength, IODirection withDirection)
-asm("_ZN18IOMemoryDescriptor19withPhysicalAddressEmm11IODirection");
+asm("__ZN18IOMemoryDescriptor19withPhysicalAddressEmm11IODirection");
 
 LC void *IOMemoryDescriptor_map(void *descriptor, unsigned int options)
-asm("_ZN18IOMemoryDescriptor3mapEm");
+asm("__ZN18IOMemoryDescriptor3mapEm");
 
 LC void *IOMemoryDescriptor_getPhysicalAddress(void *descriptor)
-asm("_ZN18IOMemoryDescriptor18getPhysicalAddressEv");
+asm("__ZN18IOMemoryDescriptor18getPhysicalAddressEv");
 
 LC void *IOMemoryMap_getAddress(void *map)
-asm("_ZN11IOMemoryMap10getAddressEv");
+asm("__ZN11IOMemoryMap10getAddressEv");
 
 LC void *IORegistryEntry_fromPath(const char *name, void *plane, char *residualPath, int *residualLength, void *fromEntry)
-asm("_ZN15IORegistryEntry8fromPathEPKcPK15IORegistryPlanePcPiPS_");
+asm("__ZN15IORegistryEntry8fromPathEPKcPK15IORegistryPlanePcPiPS_");
 
 static inline void delete_object(void *object) {
     ((void (***)(void *)) object)[0][1](object);
@@ -59,6 +57,29 @@ static inline void *retain_object(void *object) {
     ((void (***)(void *)) object)[0][4](object);
     return object;
 }
+
+// copied from xnu
+
+struct proc;
+typedef int32_t sy_call_t(struct proc *, void *, int *);
+typedef void    sy_munge_t(const void *, void *);
+
+struct sysent {     /* system call table */
+    int16_t     sy_narg;    /* number of args */
+    int8_t      sy_resv;    /* reserved  */
+    int8_t      sy_flags;   /* flags */
+    sy_call_t   *sy_call;   /* implementing function */
+    sy_munge_t  *sy_arg_munge32; /* system call arguments munger for 32-bit process */
+    sy_munge_t  *sy_arg_munge64; /* system call arguments munger for 64-bit process */
+    int32_t     sy_return_type; /* system call return types */
+    uint16_t    sy_arg_bytes;   /* Total size of arguments in bytes for
+                     * 32-bit system calls
+                     */
+};
+#define _SYSCALL_RET_INT_T      1   
+
+// end copied
+
 
 #define prop(a, off, typ) *((typ *)(((char *) (a))+(off)))
 
