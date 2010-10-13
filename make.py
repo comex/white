@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 from fabricate import *
-sources = ['kcode.c', 'black.c']
+sources = ['kcode.c', 'black.c', 'creep.c', 'creepasm.S']
 whole = True
 
 def build():
@@ -9,7 +9,7 @@ def build():
     run('bash', '-c', 'cp loader_ loader; ldid -Sent.plist loader')
     run(GCC, '-std=gnu99', '-o', 'stuff', 'stuff.c')
 
-    run(GCC, '-dynamiclib', '-o', 'kcode.dylib', sources, '-std=gnu99', '-fwhole-program', '-combine', '-nostdlib', '-nodefaultlibs', '-lgcc', '-undefined', 'dynamic_lookup')
+    run(GCC, '-dynamiclib', '-o', 'kcode.dylib', sources, '-std=gnu99', '-fwhole-program', '-combine', '-nostdlib', '-nodefaultlibs', '-lgcc', '-undefined', 'dynamic_lookup', '-read_only_relocs', 'suppress')
 
 def clean():
     autoclean()

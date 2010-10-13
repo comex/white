@@ -47,14 +47,15 @@ uint32_t reloc_base;
 
 uint32_t sysent; // :<
 
-void *map_file(const char *name) {
+void *map_file(const char *name, off_t *end) {
     int fd = open(name, O_RDONLY);
     if(fd <= 0) {
         fprintf(stderr, "unable to open %s: %s\n", name, strerror(errno));
         assert(false);
     }
-    off_t end = lseek(fd, 0, SEEK_END);
-    void *result = mmap(NULL, (size_t) end, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    off_t end_ = lseek(fd, 0, SEEK_END);
+    if(end) *end = end_;
+    void *result = mmap(NULL, (size_t) end_, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     assert(result != MAP_FAILED);
     return result;
 }
@@ -99,7 +100,7 @@ uint32_t lookup_sym(const char *name) {
 }
 
 void do_kern(const char *filename) {
-    khdr = map_file(filename);
+    khdr = map_file(filename, NULL);
 
     bool got_symtab = false;
 
@@ -136,33 +137,48 @@ void do_kern(const char *filename) {
     assert(sysent);
 }
 
-// ew, but not very important speed-wise
-static void relocate(uint32_t reloff, uint32_t nreloc) {
-    assert(reloc_base);
+void *addrconv(uint32_t addr) {
+    static struct load_command *start, *end, *cmd;
+    if(!end) {
+        end = (void *) ((char *)hdr + hdr->sizeofcmds);;
+        start = cmd = (void *) (hdr + 1);
+    }
+    void *i_started_at = cmd;
+    while(1) {
+        if(cmd->cmd == LC_SEGMENT) {
+            struct segment_command *seg = (void *) cmd;
+            if(addr >= seg->vmaddr && addr < seg->vmaddr + seg->vmsize) {
+                return (char *)hdr + seg->fileoff + (addr - seg->vmaddr);
+            }
+        }
+        cmd = (void *)((char *)cmd + cmd->cmdsize);
+        if(cmd >= end) cmd = start;
+        if(cmd == i_started_at) {
+            fprintf(stderr, "addrconv: %08x not found\n", addr);
+            assert(false);
+        }
+    }
+}
+
+void relocate(uint32_t reloff, uint32_t nreloc) {
     struct relocation_info *things = (void *) ((char *)hdr + reloff);
     for(int i = 0; i < nreloc; i++) {
         assert(!things[i].r_extern && !things[i].r_pcrel && things[i].r_length == 2);
         assert(things[i].r_type == 0);
         // *shrug*
-        vm_address_t thing = reloc_base + things[i].r_address;
-        uint32_t orig;
-        vm_size_t whatever;
-        kr_assert(vm_read_overwrite(kernel_task,
-                                    thing,
-                                    sizeof(uint32_t),
-                                    (vm_offset_t) &orig,
-                                    &whatever));
-        printf("%08x: %08x -> %08x\n", thing, orig, orig + slide);
-        orig += slide;
-        kr_assert(vm_write(kernel_task,
-                           thing,
-                           (vm_offset_t) &orig,
-                           sizeof(uint32_t)));
+        uint32_t thing = reloc_base + things[i].r_address;
+        uint32_t *p = addrconv(thing);
+        printf("%08x: %08x -> %08x\n", thing, *p, *p + slide);
+        *p += slide;
     }
 }
 
-void do_kcode(const char *filename) {
-    hdr = map_file(filename);
+void do_kcode(const char *filename, uint32_t prelink_slide, const char *prelink_output) {
+    if(!prelink_output) {
+        kr_assert(task_for_pid(mach_task_self(), 0, &kernel_task));
+    }
+    off_t filesize;
+    hdr = map_file(filename, &filesize);
 
     bool got_symtab = false, got_dysymtab = false;
 
@@ -188,40 +204,64 @@ void do_kcode(const char *filename) {
     assert(got_symtab);
     assert(got_dysymtab);
 
-    // try to reserve some space
-    for(slide = SLIDE_START; slide < SLIDE_START + 0x01000000; slide += 0x10000) {
+    if(prelink_output) {
+        slide = prelink_slide;
+        goto it_worked;
+    } else if(hdr->flags & MH_PREBOUND) {
         CMD_ITERATE(hdr, cmd) {
             if(cmd->cmd == LC_SEGMENT) {
                 struct segment_command *seg = (void *) cmd;
                 if(seg->vmsize == 0) continue;
-                vm_address_t address = seg->vmaddr + slide;
+                vm_address_t address = seg->vmaddr;
                 printf("allocate %08x %08x\n", (int) address, (int) seg->vmsize);
                 kern_return_t kr = vm_allocate(kernel_task,
                                                &address,
                                                seg->vmsize,
                                                VM_FLAGS_FIXED);
-                if(!kr) {
-                    assert(address == seg->vmaddr + slide);
-                    continue;
+
+                if(kr) {
+                    fprintf(stderr, "allocation failed :(\n");
+                    assert(false);
                 }
-                // Bother, it didn't work.  So we need to increase the slide...
-                // But first we need to get rid of the gunk we did manage to allocate.
-                CMD_ITERATE(hdr, cmd2) {
-                    if(cmd2 == cmd) break;
-                    if(cmd2->cmd == LC_SEGMENT) {
-                        struct segment_command *seg2 = (void *) cmd2;
-                        printf("deallocate %08x %08x\n", (int) (seg->vmaddr + slide), (int) seg->vmsize);
-                        kr_assert(vm_deallocate(kernel_task,
-                                                seg->vmaddr + slide,
-                                                seg->vmsize));
-                    }
-                }
-                goto try_another_slide;
+                assert(address == seg->vmaddr);
             }
         }
-        // If we got this far, it worked!
-        goto it_worked;
-        try_another_slide:;
+    } else {
+        // try to reserve some space
+        for(slide = SLIDE_START; slide < SLIDE_START + 0x01000000; slide += 0x10000) {
+            CMD_ITERATE(hdr, cmd) {
+                if(cmd->cmd == LC_SEGMENT) {
+                    struct segment_command *seg = (void *) cmd;
+                    if(seg->vmsize == 0) continue;
+                    vm_address_t address = seg->vmaddr + slide;
+                    printf("allocate %08x %08x\n", (int) address, (int) seg->vmsize);
+                    kern_return_t kr = vm_allocate(kernel_task,
+                                                   &address,
+                                                   seg->vmsize,
+                                                   VM_FLAGS_FIXED);
+                    if(!kr) {
+                        assert(address == seg->vmaddr + slide);
+                        continue;
+                    }
+                    // Bother, it didn't work.  So we need to increase the slide...
+                    // But first we need to get rid of the gunk we did manage to allocate.
+                    CMD_ITERATE(hdr, cmd2) {
+                        if(cmd2 == cmd) break;
+                        if(cmd2->cmd == LC_SEGMENT) {
+                            struct segment_command *seg2 = (void *) cmd2;
+                            printf("deallocate %08x %08x\n", (int) (seg->vmaddr + slide), (int) seg->vmsize);
+                            kr_assert(vm_deallocate(kernel_task,
+                                                    seg->vmaddr + slide,
+                                                    seg->vmsize));
+                        }
+                    }
+                    goto try_another_slide;
+                }
+            }
+            // If we got this far, it worked!
+            goto it_worked;
+            try_another_slide:;
+        }
     }
     // But if we got this far, we ran out of slides to try.
     fprintf(stderr, "we couldn't find anywhere to put this thing and that is ridiculous\n");
@@ -229,64 +269,89 @@ void do_kcode(const char *filename) {
     it_worked:;
     printf("slide=%x\n", slide);
 
-    struct nlist *syms = (void *) ((char *)hdr + symtab.symoff);
-    uint32_t *indirect = (void *) ((char *)hdr + dysymtab.indirectsymoff);
+    if(!(hdr->flags & MH_PREBOUND)) {
+        relocate(dysymtab.locreloff, dysymtab.nlocrel);
+
+        struct nlist *syms = (void *) ((char *)hdr + symtab.symoff);
+        uint32_t *indirect = (void *) ((char *)hdr + dysymtab.indirectsymoff);
+
+        CMD_ITERATE(hdr, cmd) {
+            if(cmd->cmd == LC_SEGMENT) {
+                struct segment_command *seg = (void *) cmd;
+                seg->vmaddr += slide;
+                if(!reloc_base) reloc_base = seg->vmaddr;
+                printf("%.16s %08x\n", seg->segname, seg->vmaddr);
+                struct section *sections = (void *) (seg + 1);
+                for(int i = 0; i < seg->nsects; i++) {
+                    struct section *sect = &sections[i];
+                    sect->addr += slide;
+                    printf("   %.16s\n", sect->sectname);
+                    uint8_t type = sect->flags & SECTION_TYPE;
+                    switch(type) {
+                    case S_NON_LAZY_SYMBOL_POINTERS: {
+                        uint32_t indirect_table_offset = sect->reserved1;
+                        uint32_t *things = (void *) ((char *)hdr + sect->offset);
+                        for(int i = 0; i < sect->size / 4; i++) {
+                            things[i] = lookup_sym((char *)hdr + symtab.stroff + syms[indirect[indirect_table_offset+i]].n_un.n_strx);
+                        }
+                        break;
+                    }
+                    case S_ZEROFILL:
+                    case S_MOD_INIT_FUNC_POINTERS:
+                    case S_MOD_TERM_FUNC_POINTERS:
+                    case S_REGULAR:
+                    case S_CSTRING_LITERALS:
+                    case S_4BYTE_LITERALS:
+                    case S_8BYTE_LITERALS:
+                    case S_16BYTE_LITERALS:
+                        break;
+                    default:
+                        fprintf(stderr, "unrecognized section type %02x\n", type);
+                        assert(false);
+                    }
+                    
+                    // XXX: are these relocations unique, or listed also in the dysymtab?
+                    // until I get one, I won't bother finding out
+                    assert(sect->nreloc == 0);
+
+                    relocate(sect->reloff, sect->nreloc);
+                }
+            }
+        }
+    }
+
+    if(prelink_output) {
+        hdr->flags |= MH_PREBOUND;
+        int fd = open(prelink_output, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if(fd <= 0) {
+            fprintf(stderr, "unable to open %s: %s\n", prelink_output, strerror(errno));
+            assert(false);
+        }
+        assert(write(fd, hdr, filesize) == filesize);
+        return;
+    }
 
     CMD_ITERATE(hdr, cmd) {
         if(cmd->cmd == LC_SEGMENT) {
             struct segment_command *seg = (void *) cmd;
-            seg->vmaddr += slide;
-            if(!reloc_base) reloc_base = seg->vmaddr;
-            printf("%.16s %08x\n", seg->segname, seg->vmaddr);
+            int32_t fs = seg->filesize;
+            vm_offset_t of = (vm_offset_t)hdr + seg->fileoff;
+            vm_address_t ad = seg->vmaddr;
             struct section *sections = (void *) (seg + 1);
             for(int i = 0; i < seg->nsects; i++) {
                 struct section *sect = &sections[i];
-                sect->addr += slide;
-                printf("   %.16s\n", sect->sectname);
-                uint8_t type = sect->flags & SECTION_TYPE;
-                switch(type) {
-                case S_NON_LAZY_SYMBOL_POINTERS: {
-                    uint32_t indirect_table_offset = sect->reserved1;
-                    uint32_t *things = (void *) ((char *)hdr + sect->offset);
-                    for(int i = 0; i < sect->size / 4; i++) {
-                        things[i] = lookup_sym((char *)hdr + symtab.stroff + syms[indirect[indirect_table_offset+i]].n_un.n_strx);
-                    }
-                    break;
-                }
-                case S_ZEROFILL: {
+                if((sect->flags & SECTION_TYPE) == S_ZEROFILL) {
                     void *data = calloc(1, sect->size);
                     kr_assert(vm_write(kernel_task,
                                        (vm_address_t) sect->addr,
                                        (vm_offset_t) data,
                                        sect->size));
                     free(data);
-                    break;
-                }
-                case S_MOD_INIT_FUNC_POINTERS:
-                case S_MOD_TERM_FUNC_POINTERS: {
-                    uint32_t *things = (void *) ((char *)hdr + sect->offset);
-                    for(int i = 0; i < sect->size / 4; i++) {
-                        things[i] += slide;
-                    }
-                    break;
-                }
-                case S_REGULAR:
-                case S_CSTRING_LITERALS:
-                case S_4BYTE_LITERALS:
-                case S_8BYTE_LITERALS:
-                case S_16BYTE_LITERALS:
-                    break;
-                default:
-                    fprintf(stderr, "unrecognized section type %02x\n", type);
-                    assert(false);
                 }
             }
-            int32_t fs = seg->filesize;
-            vm_offset_t of = (vm_offset_t)hdr + seg->fileoff;
-            vm_address_t ad = seg->vmaddr;
             while(fs > 0) {
                 // complete headbang.
-                printf("reading %x -> %08x\n", fs, (uint32_t) of);
+                printf("reading %x %08x -> %08x\n", fs, (uint32_t) of, (uint32_t) ad);
                 uint32_t tocopy = 0xfff;
                 if(fs < tocopy) tocopy = seg->filesize;
                 kr_assert(vm_write(kernel_task,
@@ -316,19 +381,8 @@ void do_kcode(const char *filename) {
                                                MATTR_CACHE,
                                                &val));
             }
-            for(int i = 0; i < seg->nsects; i++) {
-                struct section *sect = &sections[i];
-
-                // XXX: are these relocations unique, or listed also in the dysymtab?
-                // until I get one, I won't bother finding out
-                assert(sect->nreloc == 0);
-
-                relocate(sect->reloff, sect->nreloc);
-            }
         }
     }
-
-    relocate(dysymtab.locreloff, dysymtab.nlocrel);
 
     // okay, now do the fancy syscall stuff
     // how do I safely dispose of this file?
@@ -357,7 +411,7 @@ void do_kcode(const char *filename) {
                         struct sysent my_sysent = { 1, 0, 0, things[i], NULL, NULL, _SYSCALL_RET_INT_T, 0 };
                         printf("--> %p\n", things[i]);
                         kr_assert(vm_write(kernel_task,
-                                           sysent + 11 * sizeof(struct sysent),
+                                           (vm_address_t) sysent + 11 * sizeof(struct sysent),
                                            (vm_offset_t) &my_sysent,
                                            sizeof(struct sysent)));
                         syscall(11);
@@ -375,8 +429,92 @@ void do_kcode(const char *filename) {
     assert(!flock(lockfd, LOCK_UN));
 }
 
-int main() {
+void unload_kcode(uint32_t addr) {
     kr_assert(task_for_pid(mach_task_self(), 0, &kernel_task));
+    vm_size_t whatever;
+    hdr = malloc(0x1000);
+    if(vm_read_overwrite(kernel_task,
+                         (vm_address_t) addr,
+                         0x1000,
+                         (vm_offset_t) hdr,
+                         &whatever) == KERN_INVALID_ADDRESS) {
+        fprintf(stderr, "invalid address %08x\n", addr);
+        assert(false);
+    }
+    kr_assert(vm_read_overwrite(kernel_task,
+                                (vm_address_t) addr,
+                                0xfff,
+                                (vm_offset_t) hdr,
+                                &whatever));
+    CMD_ITERATE(hdr, cmd) {
+        if(cmd->cmd == LC_SEGMENT) {
+            struct segment_command *seg = (void *) cmd;
+            struct section *sections = (void *) (seg + 1);
+            for(int i = 0; i < seg->nsects; i++) {
+                struct section *sect = &sections[i];
+
+                if((sect->flags & SECTION_TYPE) == S_MOD_TERM_FUNC_POINTERS) {
+                    void **things = malloc(sect->size);
+                    kr_assert(vm_read_overwrite(kernel_task,
+                                                (vm_address_t) sect->addr,
+                                                sect->size,
+                                                (vm_offset_t) things,
+                                                &whatever));
+                    for(int i = 0; i < sect->size / 4; i++) {
+                        struct sysent my_sysent = { 1, 0, 0, things[i], NULL, NULL, _SYSCALL_RET_INT_T, 0 };
+                        printf("--> %p\n", things[i]);
+                        kr_assert(vm_write(kernel_task,
+                                           (vm_address_t) sysent + 11 * sizeof(struct sysent),
+                                           (vm_offset_t) &my_sysent,
+                                           sizeof(struct sysent)));
+                        syscall(11);
+                    }
+                    free(things);
+                }
+            }
+        }
+    }
+
+    CMD_ITERATE(hdr, cmd) {
+        if(cmd->cmd == LC_SEGMENT) {
+            struct segment_command *seg = (void *) cmd;
+            if(seg->vmsize > 0) {
+                kr_assert(vm_deallocate(kernel_task,
+                                        seg->vmaddr,
+                                        seg->vmsize));
+            }
+        }
+    }
+}
+
+int main(int argc, char **argv) {
+    if(argc <= 1) goto usage;
+    if(argv[1][0] != '-' || argv[1][1] == '\0' || argv[1][2] != '\0') goto usage;
+    switch(argv[1][1]) {
+    case 'l':
+        if(argc <= 3) goto usage;
+        do_kern(argv[2]);
+        do_kcode(argv[3], 0, NULL);
+        return 0;
+    case 'p':
+        if(argc <= 5) goto usage;
+        do_kern(argv[2]);
+        do_kcode(argv[3], (uint32_t) strtoll(argv[4], NULL, 16), argv[5]);
+        return 0;
+    case 'u':
+        if(argc <= 3) goto usage;
+        do_kern(argv[2]);
+        unload_kcode((uint32_t) strtoll(argv[3], NULL, 16));
+        return 0;
+    }
+
+    usage:
+    printf("Usage: loader -l kern kcode.dylib                         load\n" \
+           "              -p kern kcode.dylib f0001000 out.dylib      prelink\n" \
+           "              -u kern f0001000                            unload\n" \
+           );
+}
+
 #if 0
     void *foo = malloc(4096);
     printf("%p\n", foo);
@@ -387,8 +525,3 @@ int main() {
     printf("%x %x\n", *((uint32_t *) addr), *((uint32_t *) (addr + 4)));
     return 0; 
 #endif
-    do_kern("kern");
-    do_kcode("kcode.dylib");
-
-    return 0;
-}
