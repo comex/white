@@ -10,9 +10,14 @@
 #include <fcntl.h>
 #include <stdbool.h>
 
-int get_regs(uint32_t *ttbr0, uint32_t *ttbr1, uint32_t *ttbcr, uint32_t *contextidr) {
-    return syscall(8, 0, ttbr0, ttbr1, ttbcr, contextidr);
-}
+struct regs {
+    uint32_t ttbr0;
+    uint32_t ttbr1;
+    uint32_t ttbcr;
+    uint32_t contextidr;
+    uint32_t sctlr;
+    uint32_t scr;
+};
 
 int copy_phys(uint32_t paddr, uint32_t size, void *buf) {
     return syscall(8, 1, paddr, size, buf);
@@ -28,26 +33,6 @@ uint32_t read32(uint32_t addr) {
 
 int crash_kernel() {
     return syscall(8, 4);
-}
-
-int log_iosurfaces() {
-    return syscall(8, 5);
-}
-
-int unhook() {
-    return syscall(8, 6);
-}
-
-int loghook_address(uint32_t addr) {
-    return syscall(8, 7, addr);
-}
-
-int vmhook_address(uint32_t addr) {
-    return syscall(8, 8, addr);
-}
-
-int weirdhook_address(uint32_t addr) {
-    return syscall(8, 9, addr);
 }
 
 static const char *cacheable(uint32_t flags) {
@@ -169,37 +154,41 @@ static void dump_pagetable(uint32_t ttbr, uint32_t baseaddr, uint32_t size) {
 
 uint32_t parse_hex(const char *optarg) {
     errno = 0;
-    long long ret = strtoll(optarg, NULL, 16);
-    if(ret != 0 || errno != EINVAL) {
-        return (uint32_t) ret;
-    } else {
-        printf("Can't parse %08x\n", (uint32_t) ret);
+    char *end;
+    long long ret = strtoll(optarg, &end, 16);
+    if(errno) {
+        printf("Can't parse %s: %s\n", optarg, strerror(errno));
         abort();
+    } else if(*end) {
+        printf("Invalid hex string: %s\n", optarg);
+        abort();
+    } else {
+        return (uint32_t) ret;
     }
 }
 
 int main(int argc, char **argv) {
     int c;
     bool did_something = false;
-    uint32_t ttbr0, ttbr1, ttbcr, contextidr;
-    assert(!get_regs(&ttbr0, &ttbr1, &ttbcr, &contextidr));
+    struct regs regs;
+    assert(!syscall(8, 0, &regs));
     
-    while((c = getopt(argc, argv, "r01sl:uh:v:w:")) != -1)
+    while((c = getopt(argc, argv, "r01sl:uh:v:w:c:C")) != -1)
     switch(c) {
     case 'r': {
-        printf("ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x\n", ttbr0, ttbr1, ttbcr, contextidr);
+        printf("ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x sctlr=%x scr=%x\n", regs.ttbr0, regs.ttbr1, regs.ttbcr, regs.contextidr, regs.sctlr, regs.scr);
         did_something = true; break;
     }
     case '0': {
-        dump_pagetable(ttbr0, 0, 4096);
+        dump_pagetable(regs.ttbr0, 0, 4096);
         did_something = true; break;
     }
     case '1': {
-        dump_pagetable(ttbr1, 0, 16384);
+        dump_pagetable(regs.ttbr1, 0, 16384);
         did_something = true; break;
     }
     case 's': {
-        assert(!log_iosurfaces());
+        assert(!syscall(8, 5));
         did_something = true; break;
     }
     case 'l': {
@@ -207,19 +196,29 @@ int main(int argc, char **argv) {
         did_something = true; break;
     }
     case 'u': {
-        assert(!unhook());
+        assert(!syscall(8, 6));
         did_something = true; break;
     }
     case 'h': {
-        assert(!loghook_address(parse_hex(optarg)));
+        assert(!syscall(8, 7, parse_hex(optarg)));
         did_something = true; break;
     }
     case 'v': {
-        assert(!vmhook_address(parse_hex(optarg)));
+        assert(!syscall(8, 8, parse_hex(optarg)));
         did_something = true; break; 
     }
     case 'w': {
-        assert(!weirdhook_address(parse_hex(optarg)));
+        assert(!syscall(8, 9, parse_hex(optarg)));
+        did_something = true; break; 
+    }
+    case 'c': {
+        char *a = strsep(&optarg, "+");
+        assert(a && optarg);
+        assert(!syscall(8, 10, parse_hex(a), parse_hex(optarg)));
+        did_something = true; break; 
+    }
+    case 'C': {
+        assert(!syscall(8, 11));
         did_something = true; break; 
     }
     case '?':
@@ -231,15 +230,17 @@ int main(int argc, char **argv) {
     return 0;
 usage:
     printf("Usage: %s ...\n"
-           "    -r:         print some regs\n"
-           "    -0:         dump memory map at ttbr0\n"
-           "    -1:         dump memory map at ttbr1\n"
-           "    -s:         dump some info about IOSurfaces\n"
-           "    -l addr:    do a read32\n"
-           "    -u:         unhook\n"
-           "    -h addr:    hook for generic logging\n"
-           "    -v addr:    hook vm_fault_enter for logging\n"
-           "    -w addr:    hook weird for logging\n"
+           "    -r:           print some regs\n"
+           "    -0:           dump memory map at ttbr0\n"
+           "    -1:           dump memory map at ttbr1\n"
+           "    -s:           dump some info about IOSurfaces\n"
+           "    -l addr:      do a read32\n"
+           "    -u:           unhook\n"
+           "    -h addr:      hook for generic logging\n"
+           "    -v addr:      hook vm_fault_enter for logging\n"
+           "    -w addr:      hook weird for logging\n"
+           "    -c addr+size: hook range for creep\n"
+           "    -C:           un-creep\n"
            , argv[0]);
     return 1;
 }

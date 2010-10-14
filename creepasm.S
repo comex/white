@@ -1,8 +1,21 @@
 .arm
 .globl _undefined_handler
-# We were going to blx anyway, so R9 and R12 can get trashed
 _undefined_handler:
-    # this had better be thumb, by the way
+    # I don't want to figure out how to use the stack, so here is some ridiculous code
+    mrs sp, spsr
+    tst sp, #0x20 ;# thumb?
+    ldreq sp, saved
+    ldreq pc, [sp]
+    ldrb sp, [lr, #-3]
+    cmp sp, #0xca
+    ldrne sp, saved
+    ldrne pc, [sp]
+    ldrb sp, [lr, #-2]
+    cmp sp, #0xde
+    ldrne sp, saved
+    ldrne pc, [sp]
+    # Fine!  It is mine then!
+    # We were going to blx anyway, so R9 and R12 can get trashed
     sub lr, #2
     ldr r9, records
 loop:
@@ -33,4 +46,4 @@ loop:
     movs pc, lr
 
 records: .long records
-
+saved: .long saved

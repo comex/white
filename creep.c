@@ -12,13 +12,20 @@ struct record *record_start;
 
 static void *saved;
 
+__attribute__((const))
 static inline void **vector_base() {
-    void *result;
-    asm("mrc p15, 0, %0, c12, c0, 0" :"=r"(result));
-    return result;
+    //void *result;
+    //asm("mrc p15, 0, %0, c12, c0, 0" :"=r"(result));
+    //return result;
+    return (void **) 0xffff0000;
 }
 
-void creep_go(void *start, int size) {
+int creep_go(void *start, int size) {
+    // ldr pc, [pc, #0x18] (-> +0x20)
+    if(vector_base()[1] != (void *) 0xe59ff018) {
+        return -1;
+    }
+
     uint16_t *p = start;
     record_start = NULL;
     while(size > 0) {
@@ -33,24 +40,29 @@ void creep_go(void *start, int size) {
             IOLog("%08x\n", record->address);
             // 0xde* are permanently undefined
             *p = 0xdeca;
-            
+            invalidate_icache((vm_offset_t) p, 2, false);
         }
         size -= 2;
         p++;
     }
 
-    void **v = &vector_base()[1];
+    void **v = &vector_base()[1+8];
     saved = *v;
-    IOLog("setting undefined instruction handler to %p\n", (void *) undefined_handler);
-    *v = (void *) undefined_handler;
+    IOLog("setting undefined instruction handler to %p (from %p)\n", (void *) undefined_handler, saved);
+    //*v = (void *) undefined_handler;
+    return 0;
 }
 
 void creep_stop() {
     IOLog("restoring undefined instruction handler to %p\n", saved);
-    vector_base()[1] = saved;    
+    vector_base()[1+8] = saved;    
     struct record *r;
     while(r = record_start) {
         record_start = r->next;
+        if(!r->value) {
+            *((uint16_t *) (r->address - 1)) = r->actual_instruction;
+            invalidate_icache((vm_offset_t) (r->address - 1), 2, false);
+        }
         IOFree(r);
     }
 }

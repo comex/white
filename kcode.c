@@ -2,6 +2,9 @@
 // black.c
 void *hook(void *addr, void *replacement);
 void unhook(void *stub);
+// creep.c
+int creep_go(void *start, int size);
+void creep_stop();
 
 struct mysyscall_args {
     uint32_t mode;
@@ -9,6 +12,7 @@ struct mysyscall_args {
     uint32_t c;
     uint32_t d;
     uint32_t e;
+    uint32_t f;
 };
 
 void *(*logger_old)(void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7);
@@ -71,11 +75,13 @@ static int list_iosurfaces() {
 
 // from the loader
 extern struct sysent sysent[];
+struct sysent saved_sysent;
 
 int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval);
 __attribute__((constructor))
 void init() {
     IOLog("init %p\n", mysyscall);
+    saved_sysent = sysent[8];
     sysent[8] = (struct sysent){ 1, 0, 0, (void *) mysyscall, NULL, NULL, _SYSCALL_RET_INT_T, 5 * sizeof(uint32_t) };
     
 }
@@ -86,7 +92,18 @@ void fini() {
     unhook(logger_old); logger_old = NULL;
     unhook(vm_fault_enter_old); vm_fault_enter_old = NULL;
     unhook(weird_old); weird_old = NULL;
+    sysent[8] = saved_sysent;
 }
+
+// keep in sync with stuff.c
+struct regs {
+    uint32_t ttbr0;
+    uint32_t ttbr1;
+    uint32_t ttbcr;
+    uint32_t contextidr;
+    uint32_t sctlr;
+    uint32_t scr;
+};
 
 int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
 {
@@ -96,17 +113,16 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
     kernel_pmap[0x420/4] = 0;
     switch(uap->mode) {
     case 0: { // get regs
-        unsigned int ttbr0, ttbr1, ttbcr, contextidr;
-        asm("mrc p15, 0, %0, c2, c0, 0" :"=r"(ttbr0) :);
-        asm("mrc p15, 0, %0, c2, c0, 1" :"=r"(ttbr1) :);
-        asm("mrc p15, 0, %0, c2, c0, 2" :"=r"(ttbcr) :);
-        asm("mrc p15, 0, %0, c13, c0, 1" :"=r"(contextidr) :);
+        struct regs regs;
+        asm("mrc p15, 0, %0, c2, c0, 0" :"=r"(regs.ttbr0) :);
+        asm("mrc p15, 0, %0, c2, c0, 1" :"=r"(regs.ttbr1) :);
+        asm("mrc p15, 0, %0, c2, c0, 2" :"=r"(regs.ttbcr) :);
+        asm("mrc p15, 0, %0, c13, c0, 1" :"=r"(regs.contextidr) :);
+        asm("mrc p15, 0, %0, c1, c0, 0" :"=r"(regs.sctlr) :);
+        //asm("mcr p15, 0, %0, c1, c1, 0" :: "r"(1 << 6));
+        asm("mrc p15, 0, %0, c1, c1, 0" :"=r"(regs.scr) :);
         int error;
-        if(error = copyout(&ttbr0, (user_addr_t) uap->b, sizeof(ttbr0))) return error;
-        if(error = copyout(&ttbr1, (user_addr_t) uap->c, sizeof(ttbr1))) return error;
-        if(error = copyout(&ttbcr, (user_addr_t) uap->d, sizeof(ttbcr))) return error;
-        if(error = copyout(&contextidr, (user_addr_t) uap->e, sizeof(contextidr))) return error;
-        //IOLog("ttbr0=%x ttbr1=%x, ttbcr=%x\n", ttbr0, ttbr1, ttbcr);
+        if(error = copyout(&regs, (user_addr_t) uap->b, sizeof(regs))) return error;
         *retval = 0;
         break;
     }
@@ -162,6 +178,16 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         if(!(weird_old = hook((void *) uap->b, weird_hook))) {
             *retval = -1;
         }
+        break;
+    }
+    case 10: {
+        IOLog("%08x %08x\n", uap->b, uap->c);
+        *retval = creep_go((void *) uap->b, (int) uap->c);
+        break;
+    }
+    case 11: {
+        creep_stop();
+        *retval = 0;
         break;
     }
     default:

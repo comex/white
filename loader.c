@@ -292,7 +292,12 @@ void do_kcode(const char *filename, uint32_t prelink_slide, const char *prelink_
                         uint32_t indirect_table_offset = sect->reserved1;
                         uint32_t *things = (void *) ((char *)hdr + sect->offset);
                         for(int i = 0; i < sect->size / 4; i++) {
-                            things[i] = lookup_sym((char *)hdr + symtab.stroff + syms[indirect[indirect_table_offset+i]].n_un.n_strx);
+                            uint32_t sym = indirect[indirect_table_offset+i];
+                            if(sym == INDIRECT_SYMBOL_LOCAL) {
+                                things[i] += slide;
+                            } else if(sym != INDIRECT_SYMBOL_ABS) {
+                                things[i] = lookup_sym((char *)hdr + symtab.stroff + syms[sym].n_un.n_strx);
+                            }
                         }
                         break;
                     }
@@ -335,6 +340,7 @@ void do_kcode(const char *filename, uint32_t prelink_slide, const char *prelink_
         if(cmd->cmd == LC_SEGMENT) {
             struct segment_command *seg = (void *) cmd;
             int32_t fs = seg->filesize;
+            if(seg->vmsize < fs) fs = seg->vmsize;
             vm_offset_t of = (vm_offset_t)hdr + seg->fileoff;
             vm_address_t ad = seg->vmaddr;
             struct section *sections = (void *) (seg + 1);
@@ -351,9 +357,9 @@ void do_kcode(const char *filename, uint32_t prelink_slide, const char *prelink_
             }
             while(fs > 0) {
                 // complete headbang.
-                printf("reading %x %08x -> %08x\n", fs, (uint32_t) of, (uint32_t) ad);
+                printf("(%.16s) reading %x %08x -> %08x\n", seg->segname, fs, (uint32_t) of, (uint32_t) ad);
                 uint32_t tocopy = 0xfff;
-                if(fs < tocopy) tocopy = seg->filesize;
+                if(fs < tocopy) tocopy = fs;
                 kr_assert(vm_write(kernel_task,
                                    ad,
                                    of,
