@@ -1,5 +1,7 @@
 A somewhat saner harness for running code in the iOS kernel.
 
+However, still a hack.
+
 - Compiling
 
 You need the iOS SDK and a copy of the xnu source (to build mem.c).  You can get the latter from here:
