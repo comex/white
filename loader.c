@@ -162,14 +162,21 @@ void *addrconv(uint32_t addr) {
 
 void relocate(uint32_t reloff, uint32_t nreloc) {
     struct relocation_info *things = (void *) ((char *)hdr + reloff);
+    struct nlist *syms = (void *) ((char *)hdr + symtab.symoff);
     for(int i = 0; i < nreloc; i++) {
-        assert(!things[i].r_extern && !things[i].r_pcrel && things[i].r_length == 2);
+        assert(!things[i].r_pcrel);
+        assert(things[i].r_length == 2);
         assert(things[i].r_type == 0);
-        // *shrug*
         uint32_t thing = reloc_base + things[i].r_address;
         uint32_t *p = addrconv(thing);
-        printf("%08x: %08x -> %08x\n", thing, *p, *p + slide);
-        *p += slide;
+        if(things[i].r_extern) {
+            uint32_t sym = things[i].r_symbolnum;
+            *p += lookup_sym((char *)hdr + symtab.stroff + syms[sym].n_un.n_strx);
+        } else {
+            // *shrug*
+            printf("%08x: %08x -> %08x\n", thing, *p, *p + slide);
+            *p += slide;
+        }
     }
 }
 
@@ -271,6 +278,7 @@ void do_kcode(const char *filename, uint32_t prelink_slide, const char *prelink_
 
     if(!(hdr->flags & MH_PREBOUND)) {
         relocate(dysymtab.locreloff, dysymtab.nlocrel);
+        relocate(dysymtab.extreloff, dysymtab.nextrel);
 
         struct nlist *syms = (void *) ((char *)hdr + symtab.symoff);
         uint32_t *indirect = (void *) ((char *)hdr + dysymtab.indirectsymoff);
@@ -288,16 +296,22 @@ void do_kcode(const char *filename, uint32_t prelink_slide, const char *prelink_
                     printf("   %.16s\n", sect->sectname);
                     uint8_t type = sect->flags & SECTION_TYPE;
                     switch(type) {
-                    case S_NON_LAZY_SYMBOL_POINTERS: {
+                    case S_NON_LAZY_SYMBOL_POINTERS:
+                    case S_LAZY_SYMBOL_POINTERS: {
                         uint32_t indirect_table_offset = sect->reserved1;
                         uint32_t *things = (void *) ((char *)hdr + sect->offset);
                         for(int i = 0; i < sect->size / 4; i++) {
                             uint32_t sym = indirect[indirect_table_offset+i];
-                            if(sym == INDIRECT_SYMBOL_LOCAL) {
+                            switch(sym) {
+                            case INDIRECT_SYMBOL_LOCAL:
                                 things[i] += slide;
-                            } else if(sym != INDIRECT_SYMBOL_ABS) {
+                                break;
+                            case INDIRECT_SYMBOL_ABS:
+                                break;
+                            default:
                                 things[i] = lookup_sym((char *)hdr + symtab.stroff + syms[sym].n_un.n_strx);
                             }
+                            //printf("%p -> %x\n", &things[i], things[i]);
                         }
                         break;
                     }
@@ -305,6 +319,7 @@ void do_kcode(const char *filename, uint32_t prelink_slide, const char *prelink_
                     case S_MOD_INIT_FUNC_POINTERS:
                     case S_MOD_TERM_FUNC_POINTERS:
                     case S_REGULAR:
+                    case S_SYMBOL_STUBS:
                     case S_CSTRING_LITERALS:
                     case S_4BYTE_LITERALS:
                     case S_8BYTE_LITERALS:

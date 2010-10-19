@@ -80,8 +80,8 @@ static const char *ap(uint32_t ap) {
         "RW/RW",
         "100!",
         "RO/X",
+        "RO/RO [deprec.]",
         "RO/RO",
-        "111!",
     };
     return descs[ap & 3];
 }

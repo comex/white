@@ -1,16 +1,15 @@
 #include "kinc.h"
 
-void undefined_handler();
-
 struct record {
     uint32_t address;
     uint32_t actual_instruction;
     uint32_t value;
     struct record *next;
 } __attribute__((packed));
-struct record *record_start;
 
-static void *saved;
+void undefined_handler();
+extern struct record *record_start;
+extern void *saved;
 
 __attribute__((const))
 static inline void **vector_base() {
@@ -26,6 +25,10 @@ int creep_go(void *start, int size) {
         return -1;
     }
 
+    IOLog("%p\n", record_start);
+    *((void **) 0xc0c32000) = NULL;
+    record_start = NULL;
+    return 0;
     uint16_t *p = start;
     record_start = NULL;
     while(size > 0) {
@@ -49,7 +52,8 @@ int creep_go(void *start, int size) {
     void **v = &vector_base()[1+8];
     saved = *v;
     IOLog("setting undefined instruction handler to %p (from %p)\n", (void *) undefined_handler, saved);
-    //*v = (void *) undefined_handler;
+    void *crap = IOMalloc(16);
+    *v = (void *) undefined_handler;
     return 0;
 }
 

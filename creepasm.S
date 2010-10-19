@@ -1,23 +1,22 @@
 .arm
 .globl _undefined_handler
 _undefined_handler:
+    ldr sp, _saved
+    ldr pc, [sp]
     # I don't want to figure out how to use the stack, so here is some ridiculous code
     mrs sp, spsr
     tst sp, #0x20 ;# thumb?
-    ldreq sp, saved
-    ldreq pc, [sp]
+    ldreq pc, _saved
     ldrb sp, [lr, #-3]
     cmp sp, #0xca
-    ldrne sp, saved
-    ldrne pc, [sp]
+    ldrne pc, _saved
     ldrb sp, [lr, #-2]
     cmp sp, #0xde
-    ldrne sp, saved
-    ldrne pc, [sp]
+    ldrne pc, _saved
     # Fine!  It is mine then!
-    # We were going to blx anyway, so R9 and R12 can get trashed
+    # We were going to bl_ anyway, so R9 and R12 can get trashed
     sub lr, #2
-    ldr r9, records
+    ldr r9, _record_start
 loop:
     ldr r12, [r9]
     cmp r12, lr
@@ -45,5 +44,7 @@ loop:
     str r7, [r9, #8]
     movs pc, lr
 
-records: .long records
-saved: .long saved
+.globl _record_start, _saved
+_record_start: .long 0x00000000
+_saved: .long 0x00000000
+
