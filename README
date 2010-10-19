@@ -1,1 +1,28 @@
-A somewhat saner harness for running code in the kernel.
+A somewhat saner harness for running code in the iOS kernel.
+
+- Compiling
+
+You need the iOS SDK and a copy of the xnu source (to build mem.c).  You can get the latter from here:
+
+http://opensource.apple.com/tarballs/xnu/xnu-1504.7.4.tar.gz
+
+Apply the patch in xnu-32bit-stuff.diff.  (This is a hack: it patches types.h for i386 because mem.c is pretending to be i386, which makes it correct for arm but incorrect for i386.  So revert it before compiling any i386 kernels afterwards...)
+
+Symlink the extracted directory to xnu, then make.
+
+- Running
+
+for mem (i.e. re-enable kmem on iOS 4.1+):
+
+./loader -l kern mem.dylib
+mknod /dev/mem c 3 0
+mknod /dev/kmem c 3 1
+
+for kcode:
+
+./loader -l kern kcode.dylib
+./stuff
+
+lots of random options, -c doesn't work yet.  The most useful ones are -0 and -1 to dump the page table.
+
+

@@ -1,0 +1,24 @@
+diff --git a/bsd/i386/types.h b/bsd/i386/types.h
+index 3e31ca8..4a1282b 100644
+--- a/bsd/i386/types.h
++++ b/bsd/i386/types.h
+@@ -111,12 +111,12 @@ typedef unsigned long             uintptr_t;
+ 
+ #if !defined(_ANSI_SOURCE) && (!defined(_POSIX_C_SOURCE) || defined(_DARWIN_C_SOURCE))
+ /* These types are used for reserving the largest possible size. */
+-typedef u_int64_t              user_addr_t;    
+-typedef u_int64_t              user_size_t;    
+-typedef int64_t                        user_ssize_t;
+-typedef int64_t                        user_long_t;
+-typedef u_int64_t              user_ulong_t;
+-typedef int64_t                        user_time_t;
++typedef u_int32_t              user_addr_t;    
++typedef u_int32_t              user_size_t;    
++typedef int32_t                        user_ssize_t;
++typedef int32_t                        user_long_t;
++typedef u_int32_t              user_ulong_t;
++typedef int32_t                        user_time_t;
+ typedef int64_t                        user_off_t;
+ #define USER_ADDR_NULL ((user_addr_t) 0)
+ #define CAST_USER_ADDR_T(a_ptr)   ((user_addr_t)((uintptr_t)(a_ptr)))
+
