@@ -4,6 +4,10 @@ However, still a hack.
 
 Note: armv7 only for now.
 
+- Pulling
+
+Remember to 'git submodule update' after 'git pull'.
+
 - Compiling
 
 You need the iOS SDK and a copy of the xnu source (to build mem.c).  You can get the latter from here:
