@@ -59,6 +59,7 @@ int creep_go(void *start, int size) {
 
 void creep_stop() {
     IOLog("restoring undefined instruction handler to %p\n", saved);
+    return; //XXX
     vector_base()[1+8] = saved;    
     struct record *r;
     while(r = record_start) {
