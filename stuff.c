@@ -152,6 +152,21 @@ static void dump_pagetable(uint32_t ttbr, uint32_t baseaddr, uint32_t size) {
     }
 }
 
+static void dump_creep() {
+    struct rec {
+        uint32_t address;
+        uint32_t value;
+    } __attribute__((packed));
+    struct rec *buf = calloc(1048576, sizeof(struct rec));
+    assert(!syscall(8, 11, buf, 1048576 * sizeof(struct rec)));
+    for(int i = 0; i < 1048576; i++) {
+        if(buf[i].address != 0 || buf[i].value != 0) {
+            printf("[%d] %08x: %08x\n", i, buf[i].address, buf[i].value);
+        }
+    }
+    free(buf);
+}
+
 uint32_t parse_hex(const char *optarg) {
     errno = 0;
     char *end;
@@ -218,7 +233,7 @@ int main(int argc, char **argv) {
         did_something = true; break; 
     }
     case 'C': {
-        assert(!syscall(8, 11));
+        dump_creep();
         did_something = true; break; 
     }
     case '?':
@@ -240,7 +255,7 @@ usage:
            "    -v addr:      hook vm_fault_enter for logging\n"
            "    -w addr:      hook weird for logging\n"
            "    -c addr+size: hook range for creep\n"
-           "    -C:           un-creep\n"
+           "    -C:           dump creep results\n"
            , argv[0]);
     return 1;
 }

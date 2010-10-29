@@ -4,6 +4,7 @@ void *hook(void *addr, void *replacement);
 void unhook(void *stub);
 // creep.c
 int creep_go(void *start, int size);
+void creep_get_records(user_addr_t buf, uint32_t bufsize);
 void creep_stop();
 
 struct mysyscall_args {
@@ -86,12 +87,17 @@ void init() {
     
 }
 
-__attribute__((destructor))
-void fini() {
-    IOLog("fini\n");
+void fini_() {
+    IOLog("unhook\n");
+    creep_stop();
     unhook(logger_old); logger_old = NULL;
     unhook(vm_fault_enter_old); vm_fault_enter_old = NULL;
     unhook(weird_old); weird_old = NULL;
+}
+
+__attribute__((destructor))
+void fini() {
+    fini_();
     sysent[8] = saved_sysent;
 }
 
@@ -156,7 +162,7 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         break;
     }
     case 6: { // unhook
-        fini();
+        fini_();
         break;
     }
     case 7: { // hook a function, log args
@@ -181,12 +187,11 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         break;
     }
     case 10: {
-        IOLog("%08x %08x\n", uap->b, uap->c);
         *retval = creep_go((void *) uap->b, (int) uap->c);
         break;
     }
     case 11: {
-        creep_stop();
+        creep_get_records((user_addr_t) uap->b, uap->c);
         *retval = 0;
         break;
     }

@@ -1,10 +1,11 @@
 #include "kinc.h"
 
 struct record {
-    uint32_t address;
-    uint32_t actual_instruction;
-    uint32_t value;
-    struct record *next;
+    uint32_t address; // 0
+    uint32_t value; // 4
+    uint16_t actual_instruction; // 8
+    uint16_t pad; 
+    struct record *next; // c
 } __attribute__((packed));
 
 void undefined_handler();
@@ -20,27 +21,27 @@ static inline void **vector_base() {
 }
 
 int creep_go(void *start, int size) {
+    if(saved) {
+        IOLog("creep_go: already going (%p)\n", saved);
+        return -1;
+    }
     // ldr pc, [pc, #0x18] (-> +0x20)
     if(vector_base()[1] != (void *) 0xe59ff018) {
         return -1;
     }
 
-    IOLog("%p\n", record_start);
-    *((void **) 0xc0c32000) = NULL;
-    record_start = NULL;
-    return 0;
     uint16_t *p = start;
     record_start = NULL;
     while(size > 0) {
         uint16_t val = *p;
-        if((val & 0x7fc7) == 0x23c0) {
+        if((val & 0xff87) == 0x4780) {
             struct record *record = IOMalloc(sizeof(struct record));
-            record->address = (uint32_t)p + 1; // |1
+            record->address = (uint32_t)p; // |1
             record->actual_instruction = val;
             record->value = 0;
             record->next = record_start;
             record_start = record;
-            IOLog("%08x\n", record->address);
+            //IOLog("%08x\n", record->address);
             // 0xde* are permanently undefined
             *p = 0xdeca;
             invalidate_icache((vm_offset_t) p, 2, false);
@@ -51,22 +52,34 @@ int creep_go(void *start, int size) {
 
     void **v = &vector_base()[1+8];
     saved = *v;
-    IOLog("setting undefined instruction handler to %p (from %p)\n", (void *) undefined_handler, saved);
-    void *crap = IOMalloc(16);
+    //IOLog("actually setting undefined instruction handler to %p (from %p)\n", (void *) undefined_handler, saved);
     *v = (void *) undefined_handler;
     return 0;
 }
 
+void creep_get_records(user_addr_t buf, uint32_t bufsize) {
+    struct record *record = record_start;
+    for(struct record *record = record_start; record; record = record->next) {
+        size_t sz = 2 * sizeof(uint32_t);
+        if(bufsize < sz) return;
+        copyout(record, buf, sz);
+        buf += sz;
+        bufsize -= sz;
+    }
+}
+
 void creep_stop() {
+    if(!saved) return;    
+
     IOLog("restoring undefined instruction handler to %p\n", saved);
-    return; //XXX
     vector_base()[1+8] = saved;    
+    saved = 0;
     struct record *r;
     while(r = record_start) {
         record_start = r->next;
         if(!r->value) {
-            *((uint16_t *) (r->address - 1)) = r->actual_instruction;
-            invalidate_icache((vm_offset_t) (r->address - 1), 2, false);
+            *((uint16_t *) (r->address)) = r->actual_instruction;
+            invalidate_icache((vm_offset_t) (r->address), 2, false);
         }
         IOFree(r);
     }
