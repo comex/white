@@ -188,18 +188,22 @@ int main(int argc, char **argv) {
     struct regs regs;
     assert(!syscall(8, 0, &regs));
     
-    while((c = getopt(argc, argv, "r01sl:uh:v:w:c:C")) != -1)
+    while((c = getopt(argc, argv, "r012sl:uh:v:w:c:C")) != -1)
     switch(c) {
     case 'r': {
         printf("ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x sctlr=%x scr=%x\n", regs.ttbr0, regs.ttbr1, regs.ttbcr, regs.contextidr, regs.sctlr, regs.scr);
         did_something = true; break;
     }
     case '0': {
-        dump_pagetable(regs.ttbr0, 0, 4096);
+        dump_pagetable(regs.ttbr0, 0, 0x1000);
         did_something = true; break;
     }
     case '1': {
-        dump_pagetable(regs.ttbr1, 0, 16384);
+        dump_pagetable(regs.ttbr1, 0, 0x4000);
+        did_something = true; break;
+    }
+    case '2': {
+        dump_pagetable(regs.ttbr1 - 0x4000, 0, 0x4000);
         did_something = true; break;
     }
     case 's': {
@@ -248,6 +252,7 @@ usage:
            "    -r:           print some regs\n"
            "    -0:           dump memory map at ttbr0\n"
            "    -1:           dump memory map at ttbr1\n"
+           "    -2:           dump memory map at ttbr1-0x4000\n"
            "    -s:           dump some info about IOSurfaces\n"
            "    -l addr:      do a read32\n"
            "    -u:           unhook\n"
