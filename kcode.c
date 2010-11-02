@@ -18,9 +18,9 @@ struct mysyscall_args {
 
 void *(*logger_old)(void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7);
 static void *logger_hook(void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7) {
-    void *ret = logger_old(a1, a2, a3, a4, a5, a6, a7);
-    IOLog("logger_hook: %p %p %p %p %p %p %p ret=%p\n", a1, a2, a3, a4, a5, a6, a7, ret);
-    return ret;
+    void *result = logger_old(a1, a2, a3, a4, a5, a6, a7);
+    IOLog("logger_hook: from:%p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p\n", __builtin_return_address(0), a1, a2, a3, a4, a5, a6, a7, result);
+    return result;
 }
 
 int (*vm_fault_enter_old)(void *m, void *pmap, uint32_t vaddr, vm_prot_t prot, boolean_t wired, boolean_t change_wiring, boolean_t no_cache, int *type_of_fault);
