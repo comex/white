@@ -19,7 +19,7 @@ struct mysyscall_args {
 void *(*logger_old)(void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7);
 static void *logger_hook(void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7) {
     void *result = logger_old(a1, a2, a3, a4, a5, a6, a7);
-    IOLog("logger_hook: from:%p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p\n", __builtin_return_address(0), a1, a2, a3, a4, a5, a6, a7, result);
+    IOLog("logger_hook: from:%p,%p,%p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p\n", __builtin_return_address(0), __builtin_return_address(1), __builtin_return_address(2), a1, a2, a3, a4, a5, a6, a7, result);
     return result;
 }
 
@@ -71,6 +71,14 @@ static int list_iosurfaces() {
 
         IOLog("%d: %p vt=%p id=%d global=%d owner=%x %dx%d allocsize=%d @vram=%u\n", i, surface, vt, its_id, (int) global, owner, width, height, allocsize, vram);
     }
+    return 0;
+}
+
+static int do_something_usb_related() {
+    char *base = (void *) 0xd3edcb00;
+    *((volatile uint32_t *) (base + 0x14)) = 0x40000000;
+    *((volatile uint32_t *) (base + 0x10)) = (1 << 19) | 64;
+    *((volatile uint32_t *) (base + 0x00)) |= 0x84080000;
     return 0;
 }
 
@@ -193,6 +201,10 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
     case 11: {
         creep_get_records((user_addr_t) uap->b, uap->c);
         *retval = 0;
+        break;
+    }
+    case 12: {
+        *retval = do_something_usb_related();
         break;
     }
     default:

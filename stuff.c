@@ -188,7 +188,7 @@ int main(int argc, char **argv) {
     struct regs regs;
     assert(!syscall(8, 0, &regs));
     
-    while((c = getopt(argc, argv, "r012sl:uh:v:w:c:C")) != -1)
+    while((c = getopt(argc, argv, "r012sl:uh:v:w:c:CU")) != -1)
     switch(c) {
     case 'r': {
         printf("ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x sctlr=%x scr=%x\n", regs.ttbr0, regs.ttbr1, regs.ttbcr, regs.contextidr, regs.sctlr, regs.scr);
@@ -240,6 +240,10 @@ int main(int argc, char **argv) {
         dump_creep();
         did_something = true; break; 
     }
+    case 'U': {
+        assert(!syscall(8, 12));
+        did_something = true; break;
+    }
     case '?':
     default:
         goto usage;
@@ -261,6 +265,7 @@ usage:
            "    -w addr:      hook weird for logging\n"
            "    -c addr+size: hook range for creep\n"
            "    -C:           dump creep results\n"
+           "    -U:           do something usb related\n"
            , argv[0]);
     return 1;
 }
