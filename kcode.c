@@ -75,10 +75,15 @@ static int list_iosurfaces() {
 }
 
 static int do_something_usb_related() {
-    char *base = (void *) 0xd3edcb00;
-    *((volatile uint32_t *) (base + 0x14)) = 0x40000000;
-    *((volatile uint32_t *) (base + 0x10)) = (1 << 19) | 64;
-    *((volatile uint32_t *) (base + 0x00)) |= 0x84080000;
+    char *base = (void *) 0xd3edc000;
+    /*for(int i = 0; i < 8; i++) {
+        volatile uint32_t *control = (void *) (base + i*0x20 + 0x900);
+        uint32_t c = *control;
+        IOLog("%x\n", c);
+    }*/
+    *((volatile uint32_t *) (base + 3*0x20 + 0x914)) = 0x40001000;
+    *((volatile uint32_t *) (base + 3*0x20 + 0x910)) = (1 << 19) | 63;
+    *((volatile uint32_t *) (base + 3*0x20 + 0x900)) |= 0x84000000;
     return 0;
 }
 
