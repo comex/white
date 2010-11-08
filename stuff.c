@@ -18,6 +18,9 @@ struct regs {
     uint32_t contextidr;
     uint32_t sctlr;
     uint32_t scr;
+    uint32_t dbgdidr;
+    uint32_t dbgdrar;
+    uint32_t dbgdsar;
 };
 
 int copy_phys(uint32_t paddr, uint32_t size, void *buf) {
@@ -30,6 +33,10 @@ int kread(uint32_t addr, uint32_t size, void *buf) {
 
 uint32_t read32(uint32_t addr) {
     return syscall(8, 3, addr);
+}
+
+uint32_t read32_phys(uint32_t paddr) {
+    return syscall(8, 16, paddr);
 }
 
 static const char *cacheable(uint32_t flags) {
@@ -164,6 +171,17 @@ static void dump_creep() {
     free(buf);
 }
 
+static void dump_protoss() {
+    size_t size = 0x4000 * sizeof(uint32_t);
+    uint32_t *buf = malloc(size);
+    memset(buf, 0xff, size);
+    assert(!syscall(8, 14, buf, size));
+    for(int i = 0; i < (size / sizeof(uint32_t)); i++) {
+        printf("%.6d %08x\n", i, buf[i]);
+    }
+    free(buf);
+}
+
 uint32_t parse_hex(const char *optarg) {
     errno = 0;
     char *end;
@@ -188,14 +206,16 @@ int main(int argc, char **argv) {
     struct option options[] = {
         {"ioreg", required_argument, 0, 128},
         {"crash-kernel", no_argument, 0, 129},
+        {"test-protoss", no_argument, 0, 130},
         {0, 0, 0, 0}
     };
     int idx;
-    while((c = getopt_long(argc, argv, "r012sl:uh:v:w:c:CU", options, &idx)) != -1) {
+    while((c = getopt_long(argc, argv, "r012sl:p:uh:v:w:c:CPU", options, &idx)) != -1) {
         did_something = true;
         switch(c) {
         case 'r':
             printf("ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x sctlr=%x scr=%x\n", regs.ttbr0, regs.ttbr1, regs.ttbcr, regs.contextidr, regs.sctlr, regs.scr);
+            printf("dbgdidr=%x dbgdrar=%x dbgdsar=%x\n", regs.dbgdidr, regs.dbgdrar, regs.dbgdsar);
             break;
         case '0':
             dump_pagetable(regs.ttbr0, 0, 0x1000);
@@ -211,6 +231,9 @@ int main(int argc, char **argv) {
             break;
         case 'l':
             printf("%08x\n", read32(parse_hex(optarg)));
+            break;
+        case 'p':
+            printf("%08x\n", read32_phys(parse_hex(optarg)));
             break;
         case 'u':
             assert(!syscall(8, 6));
@@ -233,6 +256,9 @@ int main(int argc, char **argv) {
         case 'C':
             dump_creep();
             break;
+        case 'P':
+            dump_protoss();
+            break;
         case 'U':
             assert(!syscall(8, 12));
             break;
@@ -241,6 +267,9 @@ int main(int argc, char **argv) {
             break;
         case 129:
             syscall(8, 4);
+            break;
+        case 130:
+            assert(!syscall(8, 15));
             break;
         case '?':
         default:
@@ -258,15 +287,18 @@ usage:
            "    -2:           dump memory map at ttbr1-0x4000\n"
            "    -s:           dump some info about IOSurfaces\n"
            "    -l addr:      do a read32\n"
+           "    -p addr:      do a physical read32\n"
            "    -u:           unhook\n"
            "    -h addr:      hook for generic logging\n"
            "    -v addr:      hook vm_fault_enter for logging\n"
            "    -w addr:      hook weird for logging\n"
            "    -c addr+size: hook range for creep\n"
            "    -C:           dump creep results\n"
+           "    -P:           dump protoss results\n"
            "    -U:           do something usb related\n"
            "    --ioreg path: look up IORegistryEntry\n"
            "    --crash-kernel: crash the kernel\n"
+           "    --test-protoss: test protoss\n"
            , argv[0]);
     return 1;
 }

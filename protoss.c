@@ -47,7 +47,30 @@ static inline void **vector_base() {
 void prefetch_handler();
 extern void *prefetch_saved;
 
-static int protoss_go() {
+static const int num_ints = 0x4000;
+
+__attribute__((constructor))
+static void init_debug() {
+    uint32_t dbgdrar, dbgdsar;
+    asm("mrc p14, 0, %0, c1, c0, 0" :"=r"(dbgdrar) :);
+    asm("mrc p14, 0, %0, c2, c0, 0" :"=r"(dbgdsar) :);
+    //dbgdrar + dbgdsar
+}
+
+__attribute__((destructor))
+static void fini_debug() {
+
+}
+
+static inline uint32_t read_debug(int num) {
+     
+}
+
+static inline void write_debug(int num, uint32_t val) {
+
+}
+
+int protoss_go() {
     if(prefetch_saved) {
         IOLog("protoss_go: already enabled (%p)\n", prefetch_saved);
         return -1;
@@ -57,7 +80,6 @@ static int protoss_go() {
         return -1;
     }
 
-    static const int num_ints = 0x4000;
     if(!trace_start) trace_start = IOMalloc(num_ints * sizeof(uint32_t));
     trace_start[num_ints - 1] = 0xffffffff;
     for(int i = 0; i < num_ints - 1; i++) trace_start[i] = 0;
@@ -98,12 +120,11 @@ static int protoss_go() {
     dbgbvr1 = 0xdeadbeec; // asm will fill this in for single stepping
 
     //9-7->Crn 6-4->op2 3-0->Crm
-    asm volatile("mcr p14, 0, %0, c0, c0, 5" :: "r"(dbgbcr0));
-    asm volatile("mcr p14, 0, %0, c0, c0, 4" :: "r"(dbgbvr0));
-
-    asm volatile("mcr p14, 0, %0, c0, c1, 5" :: "r"(dbgbcr1));
-    asm volatile("mcr p14, 0, %0, c0, c2, 4" :: "r"(dbgbvr1));
-
+    write_debug(80, dbgbcr0.val);
+    write_debug(81, dbgbcr1.val);
+    write_debug(64, dbgbvr0);
+    write_debug(65, dbgbvr1);
+    
     uint32_t dbgdscr;
     asm("mrc p14, 0, %0, c0, c2, 2" : "=r"(dbgdscr));
     IOLog("dbgdscr: %08x\n", dbgdscr);
@@ -125,6 +146,16 @@ void protoss_stop() {
 
 void protoss_unload() {
     protoss_stop();
-    if(trace_start) IOFree(trace_start);
+    if(trace_start) {
+        IOFree(trace_start);
+        trace_start = NULL;
+    }
 }
 
+int protoss_get_records(user_addr_t buf, uint32_t bufsize) {
+    if(!trace_start) return -1;
+    uint32_t size = num_ints * sizeof(uint32_t);
+    if(size > bufsize) size = bufsize;
+    copyout(trace_start, buf, size);
+    return 0;
+}

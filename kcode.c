@@ -6,6 +6,11 @@ void unhook(void *stub);
 int creep_go(void *start, int size);
 void creep_get_records(user_addr_t buf, uint32_t bufsize);
 void creep_stop();
+// protoss.c
+int protoss_go();
+int protoss_get_records(user_addr_t buf, uint32_t bufsize);
+void protoss_stop();
+void protoss_unload();
 
 struct mysyscall_args {
     uint32_t mode;
@@ -115,6 +120,7 @@ void init() {
 void fini_() {
     IOLog("unhook\n");
     creep_stop();
+    protoss_unload();
     unhook(logger_old); logger_old = NULL;
     unhook(vm_fault_enter_old); vm_fault_enter_old = NULL;
     unhook(weird_old); weird_old = NULL;
@@ -134,6 +140,9 @@ struct regs {
     uint32_t contextidr;
     uint32_t sctlr;
     uint32_t scr;
+    uint32_t dbgdidr;
+    uint32_t dbgdrar;
+    uint32_t dbgdsar;
 };
 
 int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
@@ -152,6 +161,9 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         asm("mrc p15, 0, %0, c1, c0, 0" :"=r"(regs.sctlr) :);
         //asm("mcr p15, 0, %0, c1, c1, 0" :: "r"(1 << 6));
         asm("mrc p15, 0, %0, c1, c1, 0" :"=r"(regs.scr) :);
+        asm("mrc p14, 0, %0, c0, c0, 0" :"=r"(regs.dbgdidr) :);
+        asm("mrc p14, 0, %0, c1, c0, 0" :"=r"(regs.dbgdrar) :);
+        asm("mrc p14, 0, %0, c2, c0, 0" :"=r"(regs.dbgdsar) :);
         int error;
         if(error = copyout(&regs, (user_addr_t) uap->b, sizeof(regs))) return error;
         *retval = 0;
@@ -216,11 +228,31 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
     case 13:
         *retval = ioreg((user_addr_t) uap->b);
         break;
+    case 14:
+        *retval = protoss_get_records((user_addr_t) uap->b, uap->c);
+        break;
+    case 15:
+        if(!(*retval = protoss_go())) {
+            IOLog("Hi\n");
+            protoss_stop();
+        }
+        break;
+    case 16: {// physical read32 (if the 32-bitness actually matters)
+        void *descriptor = IOMemoryDescriptor_withPhysicalAddress(uap->b, 4, kIODirectionIn);
+        void *map = IOMemoryDescriptor_map(descriptor, 0);
+        volatile unsigned int *data = IOMemoryMap_getAddress(map);
+        
+        *retval = *data;
+        
+        delete_object(map);
+        delete_object(descriptor);
+        break;
+    }
     default:
         IOLog("Unknown mode %d\n", uap->mode);
         *retval = -1;
         break;
     }
-    
+
     return 0;
 }

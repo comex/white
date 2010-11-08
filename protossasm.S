@@ -39,4 +39,3 @@ saved_lr: .long 0
 .globl _trace_ptr, _prefetch_saved
 _trace_ptr: .long 0
 _prefetch_saved: .long 0
-

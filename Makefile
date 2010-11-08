@@ -1,7 +1,7 @@
 GCC := /Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/gcc-4.2 -arch armv7 -g3 -std=gnu99 -Os -isysroot /Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS4.1.sdk/ -mapcs-frame -fomit-frame-pointer -mthumb -fno-builtin-printf
 all: loader stuff kcode.dylib mem.dylib
 %.o: %.c kinc.h
-	$(GCC) -c -o $@ $< -DIMG3_SUPPORT
+	$(GCC) -c -o $@ $< -DIMG3_SUPPORT -Wreturn-type
 %.o: %.S
 	$(GCC) -c -o $@ $< -DIMG3_SUPPORT
 loader_: data/binary.o data/common.o data/find.o data/white_loader.o data/cc.o data/lzss.o
