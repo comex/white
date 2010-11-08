@@ -76,15 +76,27 @@ static int list_iosurfaces() {
 
 static int do_something_usb_related() {
     char *base = (void *) 0xd3edc000;
-    /*for(int i = 0; i < 8; i++) {
+    for(int i = 0; i < 8; i++) {
         volatile uint32_t *control = (void *) (base + i*0x20 + 0x900);
         uint32_t c = *control;
         IOLog("%x\n", c);
-    }*/
+    }
     *((volatile uint32_t *) (base + 3*0x20 + 0x914)) = 0x40001000;
     *((volatile uint32_t *) (base + 3*0x20 + 0x910)) = (1 << 19) | 63;
     *((volatile uint32_t *) (base + 3*0x20 + 0x900)) |= 0x84000000;
+    IOLog("%08x\n", *((volatile uint32_t *) (base + 3*0x20 + 0x900)));
+    IOSleep(100);
+    IOLog("%08x\n", *((volatile uint32_t *) (base + 3*0x20 + 0x900)));
+
     return 0;
+}
+
+static int ioreg(user_addr_t path) {
+    char buf[128];
+    size_t done;
+    copyinstr(path, buf, sizeof(buf), &done);
+    void *regentry = IORegistryEntry_fromPath(buf, NULL, NULL, NULL, NULL);
+    return (int) regentry;
 }
 
 // from the loader
@@ -157,61 +169,53 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         delete_object(descriptor);
         break;
     }
-    case 2: { // more realistic read
+    case 2: // more realistic read
         *retval = copyout((void *) uap->b, (user_addr_t) uap->d, uap->c);
         break;
-    }
-    case 3: { // read32 just in case
+    case 3: // read32 just in case
         *retval = *((int32_t *) uap->b);
         break;
-    }
-    case 4: { // crash
-        asm("sub sp, #2; mov r0, #0; ldr r0, [r0]");
+    case 4: // crash
+        ((void (*)()) 0xdeadbeef)();
         *retval = 0;
         break;
-    }
-    case 5: { // list IOSurfaces
+    case 5: // list IOSurfaces
         *retval = list_iosurfaces();
         break;
-    }
-    case 6: { // unhook
+    case 6: // unhook
         fini_();
         break;
-    }
-    case 7: { // hook a function, log args
+    case 7: // hook a function, log args
         *retval = 0;
         if(!(logger_old = hook((void *) uap->b, logger_hook))) {
             *retval = -1;
         }
         break;
-    }
-    case 8: { // hook vm_fault_enter
+    case 8: // hook vm_fault_enter
         *retval = 0;
         if(!(vm_fault_enter_old = hook((void *) uap->b, vm_fault_enter_hook))) {
             *retval = -1;
         }
         break;
-    }
-    case 9: { // hook weird
+    case 9: // hook weird
         *retval = 0;
         if(!(weird_old = hook((void *) uap->b, weird_hook))) {
             *retval = -1;
         }
         break;
-    }
-    case 10: {
+    case 10:
         *retval = creep_go((void *) uap->b, (int) uap->c);
         break;
-    }
-    case 11: {
+    case 11:
         creep_get_records((user_addr_t) uap->b, uap->c);
         *retval = 0;
         break;
-    }
-    case 12: {
+    case 12:
         *retval = do_something_usb_related();
         break;
-    }
+    case 13:
+        *retval = ioreg((user_addr_t) uap->b);
+        break;
     default:
         IOLog("Unknown mode %d\n", uap->mode);
         *retval = -1;

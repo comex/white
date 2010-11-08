@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdbool.h>
+#include <getopt.h>
 
 struct regs {
     uint32_t ttbr0;
@@ -29,10 +30,6 @@ int kread(uint32_t addr, uint32_t size, void *buf) {
 
 uint32_t read32(uint32_t addr) {
     return syscall(8, 3, addr);
-}
-
-int crash_kernel() {
-    return syscall(8, 4);
 }
 
 static const char *cacheable(uint32_t flags) {
@@ -188,65 +185,67 @@ int main(int argc, char **argv) {
     struct regs regs;
     assert(!syscall(8, 0, &regs));
     
-    while((c = getopt(argc, argv, "r012sl:uh:v:w:c:CU")) != -1)
-    switch(c) {
-    case 'r': {
-        printf("ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x sctlr=%x scr=%x\n", regs.ttbr0, regs.ttbr1, regs.ttbcr, regs.contextidr, regs.sctlr, regs.scr);
-        did_something = true; break;
-    }
-    case '0': {
-        dump_pagetable(regs.ttbr0, 0, 0x1000);
-        did_something = true; break;
-    }
-    case '1': {
-        dump_pagetable(regs.ttbr1, 0, 0x4000);
-        did_something = true; break;
-    }
-    case '2': {
-        dump_pagetable(regs.ttbr1 - 0x4000, 0, 0x4000);
-        did_something = true; break;
-    }
-    case 's': {
-        assert(!syscall(8, 5));
-        did_something = true; break;
-    }
-    case 'l': {
-        printf("%08x\n", read32(parse_hex(optarg)));
-        did_something = true; break;
-    }
-    case 'u': {
-        assert(!syscall(8, 6));
-        did_something = true; break;
-    }
-    case 'h': {
-        assert(!syscall(8, 7, parse_hex(optarg)));
-        did_something = true; break;
-    }
-    case 'v': {
-        assert(!syscall(8, 8, parse_hex(optarg)));
-        did_something = true; break; 
-    }
-    case 'w': {
-        assert(!syscall(8, 9, parse_hex(optarg)));
-        did_something = true; break; 
-    }
-    case 'c': {
-        char *a = strsep(&optarg, "+");
-        assert(a && optarg);
-        assert(!syscall(8, 10, parse_hex(a), parse_hex(optarg)));
-        did_something = true; break; 
-    }
-    case 'C': {
-        dump_creep();
-        did_something = true; break; 
-    }
-    case 'U': {
-        assert(!syscall(8, 12));
-        did_something = true; break;
-    }
-    case '?':
-    default:
-        goto usage;
+    struct option options[] = {
+        {"ioreg", required_argument, 0, 128},
+        {"crash-kernel", no_argument, 0, 129},
+        {0, 0, 0, 0}
+    };
+    int idx;
+    while((c = getopt_long(argc, argv, "r012sl:uh:v:w:c:CU", options, &idx)) != -1) {
+        did_something = true;
+        switch(c) {
+        case 'r':
+            printf("ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x sctlr=%x scr=%x\n", regs.ttbr0, regs.ttbr1, regs.ttbcr, regs.contextidr, regs.sctlr, regs.scr);
+            break;
+        case '0':
+            dump_pagetable(regs.ttbr0, 0, 0x1000);
+            break;
+        case '1':
+            dump_pagetable(regs.ttbr1, 0, 0x4000);
+            break;
+        case '2':
+            dump_pagetable(regs.ttbr1 - 0x4000, 0, 0x4000);
+            break;
+        case 's':
+            assert(!syscall(8, 5));
+            break;
+        case 'l':
+            printf("%08x\n", read32(parse_hex(optarg)));
+            break;
+        case 'u':
+            assert(!syscall(8, 6));
+            break;
+        case 'h':
+            assert(!syscall(8, 7, parse_hex(optarg)));
+            break;
+        case 'v':
+            assert(!syscall(8, 8, parse_hex(optarg)));
+            break;
+        case 'w':
+            assert(!syscall(8, 9, parse_hex(optarg)));
+            break;
+        case 'c': {
+            char *a = strsep(&optarg, "+");
+            assert(a && optarg);
+            assert(!syscall(8, 10, parse_hex(a), parse_hex(optarg)));
+            break;
+        }
+        case 'C':
+            dump_creep();
+            break;
+        case 'U':
+            assert(!syscall(8, 12));
+            break;
+        case 128:
+            printf("%p\n", (void *) syscall(8, 13, optarg));
+            break;
+        case 129:
+            syscall(8, 4);
+            break;
+        case '?':
+        default:
+            goto usage;
+        }
     }
 
     if(!did_something) goto usage;
@@ -266,6 +265,8 @@ usage:
            "    -c addr+size: hook range for creep\n"
            "    -C:           dump creep results\n"
            "    -U:           do something usb related\n"
+           "    --ioreg path: look up IORegistryEntry\n"
+           "    --crash-kernel: crash the kernel\n"
            , argv[0]);
     return 1;
 }

@@ -8,9 +8,9 @@ struct record {
     struct record *next; // c
 } __attribute__((packed));
 
-void undefined_handler();
+void undef_handler();
 extern struct record *record_start;
-extern void *saved;
+extern void *undef_saved;
 
 __attribute__((const))
 static inline void **vector_base() {
@@ -21,8 +21,8 @@ static inline void **vector_base() {
 }
 
 int creep_go(void *start, int size) {
-    if(saved) {
-        IOLog("creep_go: already going (%p)\n", saved);
+    if(undef_saved) {
+        IOLog("creep_go: already going (%p)\n", undef_saved);
         return -1;
     }
     // ldr pc, [pc, #0x18] (-> +0x20)
@@ -51,9 +51,9 @@ int creep_go(void *start, int size) {
     }
 
     void **v = &vector_base()[1+8];
-    saved = *v;
-    //IOLog("actually setting undefined instruction handler to %p (from %p)\n", (void *) undefined_handler, saved);
-    *v = (void *) undefined_handler;
+    undef_saved = *v;
+    //IOLog("actually setting undefined instruction handler to %p (from %p)\n", (void *) undef_handler, undef_saved);
+    *v = (void *) undef_handler;
     return 0;
 }
 
@@ -69,11 +69,11 @@ void creep_get_records(user_addr_t buf, uint32_t bufsize) {
 }
 
 void creep_stop() {
-    if(!saved) return;    
+    if(!undef_saved) return;    
 
-    IOLog("restoring undefined instruction handler to %p\n", saved);
-    vector_base()[1+8] = saved;    
-    saved = 0;
+    IOLog("restoring undefined instruction handler to %p\n", undef_saved);
+    vector_base()[1+8] = undef_saved;    
+    undef_saved = 0;
     struct record *r;
     while(r = record_start) {
         record_start = r->next;
