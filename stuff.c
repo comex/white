@@ -211,10 +211,13 @@ int main(int argc, char **argv) {
         {"ioreg", required_argument, 0, 128},
         {"crash-kernel", no_argument, 0, 129},
         {"test-protoss", no_argument, 0, 130},
+        {"vm_fault_enter", required_argument, 0, 131},
+        {"weird", required_argument, 0, 132},
+        {"vt", required_argument, 0, 133},
         {0, 0, 0, 0}
     };
     int idx;
-    while((c = getopt_long(argc, argv, "r012sl:p:uh:H:v:w:c:CPUd:D", options, &idx)) != -1) {
+    while((c = getopt_long(argc, argv, "r012sl:p:uh:H:v:w:c:CPUd:Dt:", options, &idx)) != -1) {
         did_something = true;
         switch(c) {
         case 'r':
@@ -248,10 +251,10 @@ int main(int argc, char **argv) {
         case 'H':
             assert(!syscall(8, 7, parse_hex(optarg), 1));
             break;
-        case 'v':
+        case 131:
             assert(!syscall(8, 8, parse_hex(optarg)));
             break;
-        case 'w':
+        case 132:
             assert(!syscall(8, 9, parse_hex(optarg)));
             break;
         case 'c': {
@@ -284,6 +287,12 @@ int main(int argc, char **argv) {
         case 'D':
             assert(!syscall(8, 18));
             break;
+        case 133:
+            assert(!syscall(8, 19, parse_hex(optarg)));
+            break;
+        case 't':
+            assert(!syscall(8, 20, parse_hex(optarg)));
+            break;
         case '?':
         default:
             goto usage;
@@ -294,28 +303,27 @@ int main(int argc, char **argv) {
     return 0;
 usage:
     printf("Usage: %s ...\n"
-           "    -r:           print some regs\n"
-           "    -0:           dump memory map at ttbr0\n"
-           "    -1:           dump memory map at ttbr1\n"
-           "    -2:           dump memory map at ttbr1-0x4000\n"
-           "    -s:           dump some info about IOSurfaces\n"
-           "    -l addr:      do a read32\n"
-           "    -p addr:      do a physical read32\n"
-           "    -u:           unhook\n"
-           "    -h addr:      hook for generic logging\n"
-           "    -H addr:      forcibly hook for generic logging\n"
-           "    -v addr:      hook vm_fault_enter for logging\n"
-           "    -w addr:      hook weird for logging\n"
-           "    -c addr+size: hook range for creep\n"
-           "    -C:           dump creep results\n"
-           "    -P:           dump protoss results\n"
-           "    -U:           do something usb related\n"
-           "    --ioreg path: look up IORegistryEntry\n"
-           "    --crash-kernel: crash the kernel\n"
-           "    -d addr:      disable kernel's use of debug registers\n"
-           "                  (arg is the result of arm_debug_info())\n"
-           "    -D:           re-enable kernel's use of debug registers\n"
-           "    --test-protoss: test protoss (requires -d)\n"
+           "    -r:                    print some regs\n"
+           "    -0:                    dump memory map at ttbr0\n"
+           "    -1:                    dump memory map at ttbr1\n"
+           "    -2:                    dump memory map at ttbr1-0x4000\n"
+           "    -s:                    dump some info about IOSurfaces\n"
+           "    -l addr:               do a read32\n"
+           "    -p addr:               do a physical read32\n"
+           "    -u:                    unhook\n"
+           "    -h addr:               hook for generic logging\n"
+           "    -H addr:               forcibly hook for generic logging\n"
+           "    --vt addr:             hook for generic logging + vtable\n"
+           "    --vm_fault_enter addr: hook vm_fault_enter for logging\n"
+           "    --weird addr:          hook weird for logging\n"
+           "    -c addr+size:          hook range for creep\n"
+           "    -C:                    dump creep results\n"
+           "    -P:                    dump protoss results\n"
+           "    -U:                    do something usb related\n"
+           "    --ioreg path:          look up IORegistryEntry\n"
+           "    --crash-kernel:        crash the kernel\n"
+           "    --test-protoss:        test protoss\n"
+           "    -t addr:               hook for generic logging + trace (protoss)\n"
            , argv[0]);
     return 1;
 }

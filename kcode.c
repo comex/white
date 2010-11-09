@@ -21,15 +21,36 @@ struct mysyscall_args {
     uint32_t f;
 };
 
-void *(*logger_old)(void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7);
-static void *logger_hook(void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7) {
-    void *result = logger_old(a1, a2, a3, a4, a5, a6, a7);
-    IOLog("logger_hook: from:%p,%p,%p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p\n", __builtin_return_address(0), __builtin_return_address(1), __builtin_return_address(2), a1, a2, a3, a4, a5, a6, a7, result);
+#define VOID_STAR_A1_THROUGH_7 void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7
+#define A1_THROUGH_7 a1, a2, a3, a4, a5, a6, a7
+static void *(*vt_old)(VOID_STAR_A1_THROUGH_7);
+static void *vt_hook(VOID_STAR_A1_THROUGH_7) {
+    void *result = vt_old(A1_THROUGH_7);
+    IOLog("vt_hook: from:%p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p vt=%p result=%p\n", __builtin_return_address(0), __builtin_return_address(1), __builtin_return_address(2), A1_THROUGH_7, *((void **) a1), result);
     return result;
 }
 
-int (*vm_fault_enter_old)(void *m, void *pmap, uint32_t vaddr, vm_prot_t prot, boolean_t wired, boolean_t change_wiring, boolean_t no_cache, int *type_of_fault);
-int vm_fault_enter_hook(void *m, void *pmap, uint32_t vaddr, vm_prot_t prot, boolean_t wired, boolean_t change_wiring, boolean_t no_cache, int *type_of_fault) {
+static void *(*logger_old)(VOID_STAR_A1_THROUGH_7);
+static void *logger_hook(VOID_STAR_A1_THROUGH_7) {
+    void *result = logger_old(A1_THROUGH_7);
+    IOLog("logger_hook: from:%p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p\n", __builtin_return_address(0), __builtin_return_address(1), __builtin_return_address(2), A1_THROUGH_7, result);
+    return result;
+}
+
+static void *(*tracer_old)(VOID_STAR_A1_THROUGH_7);
+static bool tracer_did_trace;
+static void *tracer_hook(VOID_STAR_A1_THROUGH_7) {
+    bool should_trace = !tracer_did_trace;
+    tracer_did_trace = true;
+    if(should_trace) protoss_go();
+    void *result = tracer_old(A1_THROUGH_7);
+    if(should_trace) protoss_stop();
+    IOLog("tracer_hook: from:%p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p\n", __builtin_return_address(0), __builtin_return_address(1), __builtin_return_address(2), A1_THROUGH_7, result);
+    return result;
+}
+
+static int (*vm_fault_enter_old)(void *m, void *pmap, uint32_t vaddr, vm_prot_t prot, boolean_t wired, boolean_t change_wiring, boolean_t no_cache, int *type_of_fault);
+static int vm_fault_enter_hook(void *m, void *pmap, uint32_t vaddr, vm_prot_t prot, boolean_t wired, boolean_t change_wiring, boolean_t no_cache, int *type_of_fault) {
     if((vaddr & 0xf0000000) == 0x10000000) {
         if(!(vaddr & 0xfffff)) { // xxx
             IOLog("vm_map_enter: vaddr=%08x pmap=%p prot=%x wired=%d change_wiring=%d no_cache=%d\n", vaddr, pmap, prot, wired, change_wiring, no_cache);
@@ -139,6 +160,8 @@ void fini_() {
     creep_stop();
     protoss_unload();
     unhook(logger_old); logger_old = NULL;
+    unhook(tracer_old); tracer_old = NULL; tracer_did_trace = false;
+    unhook(vt_old); vt_old = NULL;
     unhook(vm_fault_enter_old); vm_fault_enter_old = NULL;
     unhook(weird_old); weird_old = NULL;
 }
@@ -274,6 +297,19 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         break;
     case 18:
         enable_kernel_debug();
+        break;
+    case 19: // vt
+        *retval = 0;
+        if(!(vt_old = hook((void *) uap->b, vt_hook, false))) {
+            *retval = -1;
+        }
+        break;
+    case 20: // tracer
+        *retval = 0;
+        tracer_did_trace = false;
+        if(!(tracer_old = hook((void *) uap->b, tracer_hook, false))) {
+            *retval = -1;
+        }
         break;
     default:
         IOLog("Unknown mode %d\n", uap->mode);
