@@ -104,6 +104,23 @@ static int ioreg(user_addr_t path) {
     return (int) regentry;
 }
 
+static uint32_t *the_arm_debug_info;
+static uint32_t saved[2];
+
+static void disable_kernel_debug(uint32_t *adi) {
+    if(the_arm_debug_info) return;
+    the_arm_debug_info = adi;
+    saved[0] = the_arm_debug_info[0];
+    saved[1] = the_arm_debug_info[1];
+    the_arm_debug_info[0] = the_arm_debug_info[1] = 0;
+}
+static void enable_kernel_debug() {
+    if(!the_arm_debug_info) return;
+    the_arm_debug_info[0] = saved[0];
+    the_arm_debug_info[1] = saved[1];
+    the_arm_debug_info = NULL;
+}
+
 // from the loader
 extern struct sysent sysent[];
 struct sysent saved_sysent;
@@ -143,6 +160,8 @@ struct regs {
     uint32_t dbgdidr;
     uint32_t dbgdrar;
     uint32_t dbgdsar;
+    uint32_t id_dfr0;
+    uint32_t dbgdscr;
 };
 
 int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
@@ -164,6 +183,8 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         asm("mrc p14, 0, %0, c0, c0, 0" :"=r"(regs.dbgdidr) :);
         asm("mrc p14, 0, %0, c1, c0, 0" :"=r"(regs.dbgdrar) :);
         asm("mrc p14, 0, %0, c2, c0, 0" :"=r"(regs.dbgdsar) :);
+        asm("mrc p15, 0, %0, c0, c1, 2" :"=r"(regs.id_dfr0) :);
+        asm("mrc p14, 0, %0, c0, c1, 0" : "=r"(regs.dbgdscr));
         int error;
         if(error = copyout(&regs, (user_addr_t) uap->b, sizeof(regs))) return error;
         *retval = 0;
@@ -233,14 +254,14 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         break;
     case 15:
         if(!(*retval = protoss_go())) {
-            IOLog("Hi\n");
+            //IOLog("Hi\n");
             protoss_stop();
         }
         break;
     case 16: {// physical read32 (if the 32-bitness actually matters)
         void *descriptor = IOMemoryDescriptor_withPhysicalAddress(uap->b, 4, kIODirectionIn);
         void *map = IOMemoryDescriptor_map(descriptor, 0);
-        volatile unsigned int *data = IOMemoryMap_getAddress(map);
+        volatile uint32_t *data = IOMemoryMap_getAddress(map);
         
         *retval = *data;
         
@@ -248,6 +269,12 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         delete_object(descriptor);
         break;
     }
+    case 17:
+        disable_kernel_debug((void *) uap->b);
+        break;
+    case 18:
+        enable_kernel_debug();
+        break;
     default:
         IOLog("Unknown mode %d\n", uap->mode);
         *retval = -1;

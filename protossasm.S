@@ -28,14 +28,24 @@ _prefetch_handler:
     str sp, _trace_ptr
 
 fin:
+    ldr sp, _dbg_map
+    ldr lr, c5acce55
+    str lr, [sp, #0x300]
+    str lr, [sp, #0xfb0]
+    ldr lr, [sp, #0x314] ;# do not remove
+
     ldr lr, saved_lr
-    ;# don't get caught at exactly the same location
     sub lr, #4
-    and sp, lr, #0xfffffffc
-    mcr p14, 0, sp, c0, c2, 4 ;# dbgbvr1
-    movs pc, lr
+    and lr, #0xfffffffc
+    ;# don't get caught at exactly the same location
+    str lr, [sp, #0x110]
+
+    ldr lr, saved_lr
+    subs pc, lr, #4
 
 saved_lr: .long 0
-.globl _trace_ptr, _prefetch_saved
+c5acce55: .long 0xc5acce55
+.globl _trace_ptr, _prefetch_saved, _dbg_map
 _trace_ptr: .long 0
 _prefetch_saved: .long 0
+_dbg_map: .long 0

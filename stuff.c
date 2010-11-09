@@ -21,6 +21,8 @@ struct regs {
     uint32_t dbgdidr;
     uint32_t dbgdrar;
     uint32_t dbgdsar;
+    uint32_t id_dfr0;
+    uint32_t dbgdscr;
 };
 
 int copy_phys(uint32_t paddr, uint32_t size, void *buf) {
@@ -210,12 +212,12 @@ int main(int argc, char **argv) {
         {0, 0, 0, 0}
     };
     int idx;
-    while((c = getopt_long(argc, argv, "r012sl:p:uh:v:w:c:CPU", options, &idx)) != -1) {
+    while((c = getopt_long(argc, argv, "r012sl:p:uh:v:w:c:CPUd:D", options, &idx)) != -1) {
         did_something = true;
         switch(c) {
         case 'r':
             printf("ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x sctlr=%x scr=%x\n", regs.ttbr0, regs.ttbr1, regs.ttbcr, regs.contextidr, regs.sctlr, regs.scr);
-            printf("dbgdidr=%x dbgdrar=%x dbgdsar=%x\n", regs.dbgdidr, regs.dbgdrar, regs.dbgdsar);
+            printf("dbgdidr=%x dbgdrar=%x dbgdsar=%x id_dfr0=%x dbgdscr=%x\n", regs.dbgdidr, regs.dbgdrar, regs.dbgdsar, regs.id_dfr0, regs.dbgdscr);
             break;
         case '0':
             dump_pagetable(regs.ttbr0, 0, 0x1000);
@@ -271,6 +273,12 @@ int main(int argc, char **argv) {
         case 130:
             assert(!syscall(8, 15));
             break;
+        case 'd':
+            assert(!syscall(8, 17, parse_hex(optarg)));
+            break;
+        case 'D':
+            assert(!syscall(8, 18));
+            break;
         case '?':
         default:
             goto usage;
@@ -298,7 +306,10 @@ usage:
            "    -U:           do something usb related\n"
            "    --ioreg path: look up IORegistryEntry\n"
            "    --crash-kernel: crash the kernel\n"
-           "    --test-protoss: test protoss\n"
+           "    -d addr:      disable kernel's use of debug registers\n"
+           "                  (arg is the result of arm_debug_info())\n"
+           "    -D:           re-enable kernel's use of debug registers\n"
+           "    --test-protoss: test protoss (requires -d)\n"
            , argv[0]);
     return 1;
 }

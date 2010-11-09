@@ -50,6 +50,9 @@ asm("__ZN11IOMemoryMap10getAddressEv");
 LC void *IORegistryEntry_fromPath(const char *name, void *plane, char *residualPath, int *residualLength, void *fromEntry)
 asm("__ZN15IORegistryEntry8fromPathEPKcPK15IORegistryPlanePcPiPS_");
 
+LC void *IOService_mapDeviceMemoryWithIndex(void *service, unsigned int index, unsigned int options)
+asm("__ZN9IOService24mapDeviceMemoryWithIndexEjm");
+
 static inline void delete_object(void *object) {
     ((void (***)(void *)) object)[0][1](object);
 }
