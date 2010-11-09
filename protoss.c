@@ -1,3 +1,7 @@
+// NOTE:
+// The behavior of the debug register interface is really weird.
+// The only way I can get it to not crash is to toe the line exactly to what the kernel is doing, even when it doesn't seem to make sense -- for example, reading register 197 right after writing c5acce55 is required to make a subsequent read of 34 not crash.
+
 #include <stdint.h>
 #include "kinc.h"
 __attribute__((constructor))
@@ -46,7 +50,6 @@ static inline void **vector_base() {
 
 void prefetch_handler();
 extern void *prefetch_saved;
-static uint32_t dbgdscr_saved;
 static bool going;
 
 static const int num_ints = 0x4000;
@@ -54,24 +57,25 @@ static const int num_ints = 0x4000;
 extern uint32_t volatile *dbg_map;
 
 static inline uint32_t read_debug(int num) {
-    return dbg_map[num];     
+    uint32_t result = dbg_map[num];
+    return result;
 }
 
 static inline void write_debug(int num, uint32_t val) {
     dbg_map[num] = val;
 }
 
+int old_ie;
+
 static void begin_debug() {
-    asm volatile("cpsid if");
-    write_debug(192, 0xc5acce55);
+    old_ie = ml_set_interrupts_enabled(0);
+    //write_debug(192, 0xc5acce55);
     write_debug(1004, 0xc5acce55);
-    read_debug(197); // This is necessary!  I don't know why.
-    asm volatile("dsb");
+    //read_debug(197); // This is necessary!  I don't know why.
 }
 
 static void end_debug() {
-    asm volatile("dsb");
-    asm volatile("cpsie if");
+    ml_set_interrupts_enabled(old_ie);
 }
 
 __attribute__((constructor))
@@ -82,9 +86,10 @@ static void init_debug() {
     if(!map) return;
     dbg_map = IOMemoryMap_getAddress(map);
     begin_debug(); // interrupts disabled
+    read_debug(197);
     uint32_t val = read_debug(34);
     end_debug();
-    IOLog("%x\n", val);
+    IOLog("%p %x\n", dbg_map, val);
 }
 
 int protoss_go() {
@@ -102,26 +107,30 @@ int protoss_go() {
     if(!trace_start) trace_start = IOMalloc(num_ints * sizeof(uint32_t));
     trace_start[num_ints - 1] = 0xffffffff;
     for(int i = 0; i < num_ints - 1; i++) trace_start[i] = 0;
+    trace_ptr = &trace_start[1];
 
     // We can't ever branch to 80xxxxxx, so overwrite it here
     prefetch_saved = vector_base()[3+8];
     vector_base()[3+8] = (void *) prefetch_handler;
 
-    union dbgbcr dbgbcr0, dbgbcr4;
-    uint32_t dbgbvr0, dbgbvr4;
+    union dbgbcr dbgbcr5, dbgbcr4;
+    dbgbcr5.val = dbgbcr4.val = 0;
+    uint32_t dbgbvr5, dbgbvr4;
 
-    dbgbcr0.z1 = 0;
-    dbgbcr0.address_range_mask = 0;
-    dbgbcr0.z2 = 0;
-    dbgbcr0.dbgbvr_match_or_mismatch = 1; // mismatch
-    dbgbcr0.dbgbvr_iva_or_context_id = 0; // IVA
-    dbgbcr0.dbgbvr_unlinked_or_linked = 1; // linked
-    dbgbcr0.linked_brp_num = 4;
-    dbgbcr0.security_state_control = 0; // match in either security state
-    dbgbcr0.byte_address_select = 0xf; // I don't understand why this exists.
-    dbgbcr0.z4 = 0;
-    dbgbcr0.privileged_mode_control = 0; // user, system, svc *but not* exception
-    dbgbcr0.breakpoint_enable = 1; // woo
+    dbgbcr5.z1 = 0;
+    dbgbcr5.address_range_mask = 0;
+    dbgbcr5.z2 = 0;
+    dbgbcr5.dbgbvr_match_or_mismatch = 1; // mismatch
+    dbgbcr5.dbgbvr_iva_or_context_id = 0; // IVA
+    dbgbcr5.dbgbvr_unlinked_or_linked = 1; // linked
+    dbgbcr5.linked_brp_num = 4;
+    dbgbcr5.security_state_control = 0; // match in either security state
+    dbgbcr5.byte_address_select = 0xf; // I don't understand why this exists.
+    dbgbcr5.z4 = 0;
+    dbgbcr5.privileged_mode_control = 0; // user, system, svc *but not* exception
+    dbgbcr5.breakpoint_enable = 1; // woo
+    
+    dbgbvr5 = 0xdeadbeec; // asm will fill this in for single stepping
     
     dbgbcr4.z1 = 0;
     dbgbcr4.address_range_mask = 0; // exact (but it's step-two for thumb :()
@@ -129,55 +138,68 @@ int protoss_go() {
     dbgbcr4.dbgbvr_match_or_mismatch = 0; // match
     dbgbcr4.dbgbvr_iva_or_context_id = 1; // Context ID
     dbgbcr4.dbgbvr_unlinked_or_linked = 1;
-    dbgbcr4.linked_brp_num = 0;
+    dbgbcr4.linked_brp_num = 5;
     dbgbcr4.security_state_control = 0;
     dbgbcr4.byte_address_select = 0xf;
     dbgbcr4.z4 = 0;
     dbgbcr4.privileged_mode_control = 0;
     dbgbcr4.breakpoint_enable = 1;
 
-    IOLog("%08x %08x\n", dbgbcr0.val, dbgbcr4.val);
+    IOLog("%08x %08x\n", dbgbcr5.val, dbgbcr4.val);
 
-    dbgbvr0 = 0xdeadbeec; // asm will fill this in for single stepping
     // get current context ID
     asm("mrc p15, 0, %0, c13, c0, 1" :"=r"(dbgbvr4) :);
     
     begin_debug(); // interrupts disabled
+    read_debug(197);
     uint32_t dbgdscr = read_debug(34);
-    dbgdscr_saved = dbgdscr;
-    dbgdscr &= ~0xc000; // turn off debug
+    dbgdscr |= 0x8000; // turn on debug
     write_debug(34, dbgdscr);
-
-    //9-7->Crn 6-4->op2 3-0->Crm
-    write_debug(64+0, dbgbvr0);
-    write_debug(64+4, dbgbvr4);
-    write_debug(80, dbgbcr0.val);
-    write_debug(80+4, dbgbcr4.val);
-
-    goto end;
-
-    dbgdscr |= 0x8000; // turn on monitor debug mode
-    //write_debug(34, dbgdscr);
-end:
+    // watchpoint
+    for(int i = 0; i < 16; i++) {
+        write_debug(80 + i, 0);
+        write_debug(112 + i, 0);
+    }
+    for(int i = 0; i < 16; i++) {
+        uint32_t bvr = 0, bcr = 0;
+        if(i == 4) {
+            bvr = dbgbvr4;
+            bcr = dbgbcr4.val;
+        } else if(i == 5) {
+            bvr = dbgbvr5;
+            bcr = dbgbcr5.val;
+        }
+        write_debug(64 + i, bvr);
+        write_debug(80 + i, bcr);
+        write_debug(112 + i, read_debug(112 + i));
+    }
     end_debug();
-    IOLog("dbgdscr_saved: %08x\n", dbgdscr_saved);
+    
     return 0;
 }
 
 void protoss_stop() {
+    if(going) {
+        begin_debug(); // interrupts disabled
+        read_debug(197);
+        uint32_t dbgdscr = read_debug(34);
+        dbgdscr |= 0x8000; // turn on debug
+        write_debug(34, dbgdscr);
+        // watchpoint
+        for(int i = 0; i < 16; i++) {
+            write_debug(80 + i, 0);
+            write_debug(112 + i, 0);
+        }
+
+        dbgdscr = read_debug(34);
+        dbgdscr &= ~0x8000;
+        write_debug(34, dbgdscr);
+        end_debug();
+    }
     if(prefetch_saved) {
         vector_base()[3+8] = prefetch_saved;
         prefetch_saved = NULL;
     }
-    if(!going) return;
-    begin_debug(); // interrupts disabled
-    if(dbgdscr_saved) write_debug(34, dbgdscr_saved);
-    write_debug(80, 0);
-    write_debug(81, 0);
-    write_debug(64, 0);
-    write_debug(65, 0);
-    going = false;
-    end_debug();
 }
 
 void protoss_unload() {
@@ -185,6 +207,7 @@ void protoss_unload() {
     if(trace_start) {
         IOFree(trace_start);
         trace_start = NULL;
+        trace_ptr = NULL;
     }
 }
 

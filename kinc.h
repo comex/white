@@ -28,6 +28,8 @@ LC void IOLog(const char *msg, ...) __attribute__((format (printf, 1, 2)));
 
 LC void IOSleep(unsigned int milliseconds);
 
+LC int ml_set_interrupts_enabled(int enabled);
+
 typedef enum IODirection { 
     kIODirectionNone = 0, 
     kIODirectionIn = 1, // User land 'read' 

@@ -1,6 +1,6 @@
 #include "kinc.h"
 // black.c
-void *hook(void *addr, void *replacement);
+void *hook(void *addr, void *replacement, bool force);
 void unhook(void *stub);
 // creep.c
 int creep_go(void *start, int size);
@@ -220,19 +220,19 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         break;
     case 7: // hook a function, log args
         *retval = 0;
-        if(!(logger_old = hook((void *) uap->b, logger_hook))) {
+        if(!(logger_old = hook((void *) uap->b, logger_hook, uap->c))) {
             *retval = -1;
         }
         break;
     case 8: // hook vm_fault_enter
         *retval = 0;
-        if(!(vm_fault_enter_old = hook((void *) uap->b, vm_fault_enter_hook))) {
+        if(!(vm_fault_enter_old = hook((void *) uap->b, vm_fault_enter_hook, false))) {
             *retval = -1;
         }
         break;
     case 9: // hook weird
         *retval = 0;
-        if(!(weird_old = hook((void *) uap->b, weird_hook))) {
+        if(!(weird_old = hook((void *) uap->b, weird_hook, false))) {
             *retval = -1;
         }
         break;
@@ -254,7 +254,7 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         break;
     case 15:
         if(!(*retval = protoss_go())) {
-            //IOLog("Hi\n");
+            IOLog("Hi\n");
             protoss_stop();
         }
         break;

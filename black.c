@@ -1,7 +1,7 @@
 #include "kinc.h"
 #define cast(a, b) ((a) (b))
 
-void *hook(void *addr, void *replacement) {
+void *hook(void *addr, void *replacement, bool force) {
     if(0 == cast(uint32_t, addr) & 1) {
         IOLog("Hooking ARM functions is not supported\n");
         return NULL;
@@ -13,7 +13,11 @@ void *hook(void *addr, void *replacement) {
     // We expect PUSH {regs, LR}; ADD Rn, SP, #x
     if(!( ((value & 0xff00) == 0xb500) && ((value & 0xf8000000) == 0xa8000000) )) {
         IOLog("I couldn't hook %p because its prolog is weird (%08x)\n", addr, value);
-        return NULL;
+        if(force) {
+            IOLog("...but I'll do it anyway\n");
+        } else {
+            return NULL;
+        }
     }
     
     // PSA: MOV PC, #x just does nothing.

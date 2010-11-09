@@ -179,7 +179,9 @@ static void dump_protoss() {
     memset(buf, 0xff, size);
     assert(!syscall(8, 14, buf, size));
     for(int i = 0; i < (size / sizeof(uint32_t)); i++) {
-        printf("%.6d %08x\n", i, buf[i]);
+        if(buf[i]) {
+            printf("%.5d %08x\n", i, buf[i]);
+        }
     }
     free(buf);
 }
@@ -212,7 +214,7 @@ int main(int argc, char **argv) {
         {0, 0, 0, 0}
     };
     int idx;
-    while((c = getopt_long(argc, argv, "r012sl:p:uh:v:w:c:CPUd:D", options, &idx)) != -1) {
+    while((c = getopt_long(argc, argv, "r012sl:p:uh:H:v:w:c:CPUd:D", options, &idx)) != -1) {
         did_something = true;
         switch(c) {
         case 'r':
@@ -241,7 +243,10 @@ int main(int argc, char **argv) {
             assert(!syscall(8, 6));
             break;
         case 'h':
-            assert(!syscall(8, 7, parse_hex(optarg)));
+            assert(!syscall(8, 7, parse_hex(optarg), 0));
+            break;
+        case 'H':
+            assert(!syscall(8, 7, parse_hex(optarg), 1));
             break;
         case 'v':
             assert(!syscall(8, 8, parse_hex(optarg)));
@@ -298,6 +303,7 @@ usage:
            "    -p addr:      do a physical read32\n"
            "    -u:           unhook\n"
            "    -h addr:      hook for generic logging\n"
+           "    -H addr:      forcibly hook for generic logging\n"
            "    -v addr:      hook vm_fault_enter for logging\n"
            "    -w addr:      hook weird for logging\n"
            "    -c addr+size: hook range for creep\n"

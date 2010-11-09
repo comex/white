@@ -5,7 +5,6 @@ _prefetch_handler:
     mrc p15, 0, sp, c5, c0, 1
     tst sp, #(1 << 10)
     ldrne pc, _prefetch_saved
-    cmp sp, #2
     and sp, #0xf
     cmp sp, #2
     ldrne pc, _prefetch_saved
@@ -19,9 +18,17 @@ _prefetch_handler:
     str lr, saved_lr
 
     ldr sp, _trace_ptr
+    cmp sp, #0
+    beq fin
     ldr lr, [sp]
     cmp lr, #0
     bne fin ;# out of space
+
+    ldr lr, [sp, #-4]
+    mrc p15, 0, sp, c6, c0, 2
+    cmp lr, sp
+    beq fin ;# duplicate
+
     ldr sp, _trace_ptr
     mrc p15, 0, lr, c6, c0, 2
     str lr, [sp], #4
@@ -30,15 +37,17 @@ _prefetch_handler:
 fin:
     ldr sp, _dbg_map
     ldr lr, c5acce55
-    str lr, [sp, #0x300]
     str lr, [sp, #0xfb0]
     ldr lr, [sp, #0x314] ;# do not remove
+    #ldr lr, [sp, #0x88]
+    #bic lr, #0x8000
+    #str lr, [sp, #0x88]
 
     ldr lr, saved_lr
     sub lr, #4
     and lr, #0xfffffffc
     ;# don't get caught at exactly the same location
-    str lr, [sp, #0x110]
+    str lr, [sp, #0x114]
 
     ldr lr, saved_lr
     subs pc, lr, #4
