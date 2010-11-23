@@ -215,6 +215,8 @@ int main(int argc, char **argv) {
     
     struct option options[] = {
         {"ioreg", required_argument, 0, 128},
+        {"ioreg-matching", required_argument, 0, 134},
+        {"ioreg-name-matching", required_argument, 0, 135},
         {"metaclass", required_argument, 0, 134},
         {"crash-kernel", no_argument, 0, 129},
         {"test-protoss", no_argument, 0, 130},
@@ -285,10 +287,9 @@ int main(int argc, char **argv) {
             assert(!syscall(8, 12));
             break;
         case 128:
-            printf("%p\n", (void *) syscall(8, 13, optarg));
-            break;
         case 134:
-            printf("%p\n", (void *) syscall(8, 21, optarg));
+        case 135:
+            printf("%p\n", (void *) syscall(8, 13, c, optarg));
             break;
         case 129:
             syscall(8, 4);
@@ -338,6 +339,8 @@ usage:
            "    -P:                    dump protoss results\n"
            "    -U:                    do something usb related\n"
            "    --ioreg path:          look up IORegistryEntry\n"
+           "    --ioreg-matching:      service matching\n"
+           "    --ioreg-name-matching: name matching\n"
            "    --metaclass name:      look up OSMetaClass\n"
            "    --crash-kernel:        crash the kernel\n"
            "    --test-protoss:        test protoss\n"

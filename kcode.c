@@ -117,11 +117,41 @@ static int do_something_usb_related() {
     return 0;
 }
 
-static int ioreg(user_addr_t path) {
+static int ioreg(uint32_t type, user_addr_t path) {
     char buf[128];
     size_t done;
     copyinstr(path, buf, sizeof(buf), &done);
-    void *regentry = IORegistryEntry_fromPath(buf, NULL, NULL, NULL, NULL);
+    void *regentry;
+    if(type == 128) {
+        regentry = IORegistryEntry_fromPath(buf, NULL, NULL, NULL, NULL);
+    } else {
+        void *matching;
+        switch(type) {
+        case 134:
+            matching = IOService_serviceMatching(buf, NULL);
+            break;
+        case 135:
+            matching = IOService_nameMatching(buf, NULL);
+            break;
+        default:
+            IOLog("?\n");
+            return -1;
+        }
+        void *iterator = IOService_getMatchingServices(matching);
+        if(!iterator) {
+            IOLog("null iterator\n");
+            return -1;
+        }
+        void *object;
+        regentry = NULL;
+        while(object = OSIterator_getNextObject(iterator)) {
+            if(!regentry) regentry = object;
+            IOLog("- %p\n", object);
+        }
+        IOLog("\n");
+        release_object(iterator);
+        release_object(matching);
+    }
     return (int) regentry;
 }
 
@@ -284,7 +314,7 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         *retval = do_something_usb_related();
         break;
     case 13:
-        *retval = ioreg((user_addr_t) uap->b);
+        *retval = ioreg(uap->b, (user_addr_t) uap->c);
         break;
     case 14:
         *retval = protoss_get_records((user_addr_t) uap->b, uap->c);

@@ -51,6 +51,19 @@ asm("__ZN18IOMemoryDescriptor18getPhysicalAddressEv");
 LC void *IOMemoryMap_getAddress(void *map)
 asm("__ZN11IOMemoryMap10getAddressEv");
 
+LC void *IOService_serviceMatching(const char *buf, void *table)
+asm("__ZN9IOService15serviceMatchingEPKcP12OSDictionary");
+
+LC void *IOService_nameMatching(const char *buf, void *table)
+asm("__ZN9IOService12nameMatchingEPKcP12OSDictionary");
+
+LC void *IOService_getMatchingServices(void *matching)
+asm("__ZN9IOService19getMatchingServicesEP12OSDictionary");
+
+static inline void *OSIterator_getNextObject(void *iterator) {
+    return ((void *(***)(void *)) iterator)[0][21](iterator);
+}
+
 LC void *IORegistryEntry_fromPath(const char *name, void *plane, char *residualPath, int *residualLength, void *fromEntry)
 asm("__ZN15IORegistryEntry8fromPathEPKcPK15IORegistryPlanePcPiPS_");
 
