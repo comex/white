@@ -8,6 +8,8 @@ typedef void *vm_map_t;
 extern vm_map_t kernel_map;
 extern uint32_t *kernel_pmap;
 
+LC void *memset(void *b, int c, size_t len);
+
 LC void invalidate_icache(vm_offset_t addr, unsigned cnt, bool phys);
 
 LC void *IOMalloc(size_t size);
@@ -54,6 +56,12 @@ asm("__ZN15IORegistryEntry8fromPathEPKcPK15IORegistryPlanePcPiPS_");
 
 LC void *IOService_mapDeviceMemoryWithIndex(void *service, unsigned int index, unsigned int options)
 asm("__ZN9IOService24mapDeviceMemoryWithIndexEjm");
+
+LC void *OSSymbol_withCString(const char *string)
+asm("__ZN8OSSymbol11withCStringEPKc");
+
+LC void *OSMetaClass_getMetaClassWithName(void *symbol)
+asm("__ZN11OSMetaClass20getMetaClassWithNameEPK8OSSymbol");
 
 static inline void delete_object(void *object) {
     ((void (***)(void *)) object)[0][1](object);

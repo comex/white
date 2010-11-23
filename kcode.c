@@ -125,23 +125,15 @@ static int ioreg(user_addr_t path) {
     return (int) regentry;
 }
 
-static uint32_t *the_arm_debug_info;
-static uint32_t saved[2];
-
-static void disable_kernel_debug(uint32_t *adi) {
-    if(the_arm_debug_info) return;
-    the_arm_debug_info = adi;
-    saved[0] = the_arm_debug_info[0];
-    saved[1] = the_arm_debug_info[1];
-    the_arm_debug_info[0] = the_arm_debug_info[1] = 0;
+static uint32_t lookup_metaclass(user_addr_t name) {
+    char buf[128];
+    size_t done;
+    copyinstr(name, buf, sizeof(buf), &done);
+    void *symbol = OSSymbol_withCString(buf);
+    uint32_t result = (uint32_t) OSMetaClass_getMetaClassWithName(symbol);
+    release_object(symbol);
+    return result;
 }
-static void enable_kernel_debug() {
-    if(!the_arm_debug_info) return;
-    the_arm_debug_info[0] = saved[0];
-    the_arm_debug_info[1] = saved[1];
-    the_arm_debug_info = NULL;
-}
-
 // from the loader
 extern struct sysent sysent[];
 struct sysent saved_sysent;
@@ -228,9 +220,31 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
     case 2: // more realistic read
         *retval = copyout((void *) uap->b, (user_addr_t) uap->d, uap->c);
         break;
-    case 3: // read32 just in case
-        *retval = *((int32_t *) uap->b);
+    case 3: // read32 (possibly physical)
+    case 16: // write32 (possibly physical)
+    {
+        bool phys = (uap->mode == 16) ? uap->d : uap->c;
+        volatile uint32_t *data;
+        void *descriptor, *map;
+        if(phys) {
+            descriptor = IOMemoryDescriptor_withPhysicalAddress(uap->b, 4, uap->mode == 16 ? kIODirectionOut : kIODirectionIn);
+            map = IOMemoryDescriptor_map(descriptor, 0);
+            data = IOMemoryMap_getAddress(map);
+        } else {
+            data = (void *) uap->b;
+        }
+        if(uap->mode == 16) {
+            *data = uap->c;
+            *retval = 0;
+        } else {
+            *retval = *data;
+        }
+        if(phys) {
+            delete_object(map);
+            delete_object(descriptor);
+        }
         break;
+    }
     case 4: // crash
         ((void (*)()) 0xdeadbeef)();
         *retval = 0;
@@ -281,23 +295,6 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
             protoss_stop();
         }
         break;
-    case 16: {// physical read32 (if the 32-bitness actually matters)
-        void *descriptor = IOMemoryDescriptor_withPhysicalAddress(uap->b, 4, kIODirectionIn);
-        void *map = IOMemoryDescriptor_map(descriptor, 0);
-        volatile uint32_t *data = IOMemoryMap_getAddress(map);
-        
-        *retval = *data;
-        
-        delete_object(map);
-        delete_object(descriptor);
-        break;
-    }
-    case 17:
-        disable_kernel_debug((void *) uap->b);
-        break;
-    case 18:
-        enable_kernel_debug();
-        break;
     case 19: // vt
         *retval = 0;
         if(!(vt_old = hook((void *) uap->b, vt_hook, false))) {
@@ -310,6 +307,9 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         if(!(tracer_old = hook((void *) uap->b, tracer_hook, false))) {
             *retval = -1;
         }
+        break;
+    case 21:
+        *retval = lookup_metaclass(uap->b);
         break;
     default:
         IOLog("Unknown mode %d\n", uap->mode);

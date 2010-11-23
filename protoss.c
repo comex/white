@@ -40,8 +40,13 @@ union dbgbcr {
     } __attribute__((packed));
 };
 
-static uint32_t *trace_start;
-extern uint32_t *trace_ptr;
+struct trace_entry {
+    uint32_t r[13];
+    uint32_t lr;
+} __attribute__((packed));
+
+static struct trace_entry *trace_start;
+extern struct trace_entry *trace_ptr;
 
 __attribute__((const))
 static inline void **vector_base() {
@@ -52,7 +57,7 @@ void prefetch_handler();
 extern void *prefetch_saved;
 static bool going;
 
-static const int num_ints = 0x4000;
+static const int num_trace_entries = 0x4000;
 
 extern uint32_t volatile *dbg_map;
 
@@ -85,11 +90,11 @@ static void init_debug() {
     void *map = IOService_mapDeviceMemoryWithIndex(reg_entry, 0, 0);
     if(!map) return;
     dbg_map = IOMemoryMap_getAddress(map);
-    begin_debug(); // interrupts disabled
+    /*begin_debug(); // interrupts disabled
     read_debug(197);
     uint32_t val = read_debug(34);
     end_debug();
-    IOLog("%p %x\n", dbg_map, val);
+    IOLog("%p %x\n", dbg_map, val);*/
 }
 
 int protoss_go() {
@@ -104,9 +109,9 @@ int protoss_go() {
         return -1;
     }
 
-    if(!trace_start) trace_start = IOMalloc(num_ints * sizeof(uint32_t));
-    trace_start[num_ints - 1] = 0xffffffff;
-    for(int i = 0; i < num_ints - 1; i++) trace_start[i] = 0;
+    if(!trace_start) trace_start = IOMalloc(num_trace_entries * sizeof(struct trace_entry));
+    memset(trace_start, 0, (num_trace_entries - 1) * sizeof(struct trace_entry));
+    memset(&trace_start[num_trace_entries - 1], 0xff, sizeof(struct trace_entry));
     trace_ptr = &trace_start[1];
 
     // We can't ever branch to 80xxxxxx, so overwrite it here
@@ -213,7 +218,7 @@ void protoss_unload() {
 
 int protoss_get_records(user_addr_t buf, uint32_t bufsize) {
     if(!trace_start) return -1;
-    uint32_t size = num_ints * sizeof(uint32_t);
+    size_t size = num_trace_entries * sizeof(struct trace_entry);
     if(size > bufsize) size = bufsize;
     copyout(trace_start, buf, size);
     return 0;

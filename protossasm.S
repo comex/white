@@ -31,7 +31,7 @@ _prefetch_handler:
 
     ldr sp, _trace_ptr
     mrc p15, 0, lr, c6, c0, 2
-    str lr, [sp], #4
+    stmia sp!, {r0-r12, lr}
     str sp, _trace_ptr
 
 fin:

@@ -13,18 +13,18 @@ _undef_handler:
     cmp sp, #0xde
     ldrne pc, _undef_saved
     # Fine!  It is mine then!
-    # We were going to blx anyway, so R9 and R12 can get trashed
+    # We were going to blx anyway, so R9 BUT NOT R12 can get trashed
     sub lr, #2
     ldr r9, _record_start
 loop:
-    ldr r12, [r9]
-    cmp r12, lr
+    ldr sp, [r9]
+    cmp sp, lr
     ldrne r9, [r9, #0xc]
     bne loop
-    ldrh r12, [r9, #8]
-    strh r12, [lr]
-    and r12, #0x38
-    add pc, r12
+    ldrh sp, [r9, #8]
+    strh sp, [lr]
+    and sp, #0x38
+    add pc, sp
     nop
     str r0, [r9, #4]
     b end

@@ -33,14 +33,6 @@ int kread(uint32_t addr, uint32_t size, void *buf) {
     return syscall(8, 2, addr, size, buf);
 }
 
-uint32_t read32(uint32_t addr) {
-    return syscall(8, 3, addr);
-}
-
-uint32_t read32_phys(uint32_t paddr) {
-    return syscall(8, 16, paddr);
-}
-
 static const char *cacheable(uint32_t flags) {
     const char *descs[] = {
         "Non-cacheable",
@@ -173,14 +165,28 @@ static void dump_creep() {
     free(buf);
 }
 
+struct trace_entry {
+    uint32_t r[13];
+    uint32_t lr;
+} __attribute__((packed));
+
 static void dump_protoss() {
-    size_t size = 0x4000 * sizeof(uint32_t);
-    uint32_t *buf = malloc(size);
-    memset(buf, 0xff, size);
+    size_t size = 0x4000 * sizeof(struct trace_entry);
+    struct trace_entry *buf = malloc(size);
+    memset(buf, 0, size);
     assert(!syscall(8, 14, buf, size));
-    for(int i = 0; i < (size / sizeof(uint32_t)); i++) {
-        if(buf[i]) {
-            printf("%.5d %08x\n", i, buf[i]);
+    struct trace_entry last;
+    memset(&last, 0, sizeof(struct trace_entry));
+    for(int i = 0; i < (size / sizeof(struct trace_entry)); i++) {
+        if(buf[i].lr) {
+            printf("%.5d %08x", i, buf[i].lr);
+            for(int r = 0; r < 12; r++)  {
+                if(buf[i].r[r] != last.r[r]) {
+                    printf(" R%d=%08x", r, buf[i].r[r]);
+                }
+            }
+            printf("\n");
+            last = buf[i];
         }
     }
     free(buf);
@@ -209,6 +215,7 @@ int main(int argc, char **argv) {
     
     struct option options[] = {
         {"ioreg", required_argument, 0, 128},
+        {"metaclass", required_argument, 0, 134},
         {"crash-kernel", no_argument, 0, 129},
         {"test-protoss", no_argument, 0, 130},
         {"vm_fault_enter", required_argument, 0, 131},
@@ -217,7 +224,7 @@ int main(int argc, char **argv) {
         {0, 0, 0, 0}
     };
     int idx;
-    while((c = getopt_long(argc, argv, "r012sl:p:uh:H:v:w:c:CPUd:Dt:", options, &idx)) != -1) {
+    while((c = getopt_long(argc, argv, "r012sl:w:L:W:uh:H:v:w:c:CPUd:Dt:", options, &idx)) != -1) {
         did_something = true;
         switch(c) {
         case 'r':
@@ -237,11 +244,16 @@ int main(int argc, char **argv) {
             assert(!syscall(8, 5));
             break;
         case 'l':
-            printf("%08x\n", read32(parse_hex(optarg)));
+        case 'L':
+            printf("%08x\n", syscall(8, 3, parse_hex(optarg), c == 'L'));
             break;
-        case 'p':
-            printf("%08x\n", read32_phys(parse_hex(optarg)));
+        case 'w':
+        case 'W': {
+            char *a = strsep(&optarg, "=");
+            assert(a && optarg);
+            assert(!syscall(8, 16, parse_hex(a), parse_hex(optarg), c == 'W'));
             break;
+        }
         case 'u':
             assert(!syscall(8, 6));
             break;
@@ -274,6 +286,9 @@ int main(int argc, char **argv) {
             break;
         case 128:
             printf("%p\n", (void *) syscall(8, 13, optarg));
+            break;
+        case 134:
+            printf("%p\n", (void *) syscall(8, 21, optarg));
             break;
         case 129:
             syscall(8, 4);
@@ -309,7 +324,9 @@ usage:
            "    -2:                    dump memory map at ttbr1-0x4000\n"
            "    -s:                    dump some info about IOSurfaces\n"
            "    -l addr:               do a read32\n"
-           "    -p addr:               do a physical read32\n"
+           "    -w addr=value:         do a write32\n"
+           "    -L addr:               do a physical read32\n"
+           "    -W addr=value:         do a physical write32\n"
            "    -u:                    unhook\n"
            "    -h addr:               hook for generic logging\n"
            "    -H addr:               forcibly hook for generic logging\n"
@@ -321,6 +338,7 @@ usage:
            "    -P:                    dump protoss results\n"
            "    -U:                    do something usb related\n"
            "    --ioreg path:          look up IORegistryEntry\n"
+           "    --metaclass name:      look up OSMetaClass\n"
            "    --crash-kernel:        crash the kernel\n"
            "    --test-protoss:        test protoss\n"
            "    -t addr:               hook for generic logging + trace (protoss)\n"
