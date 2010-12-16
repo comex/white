@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include "kinc.h"
+/*
 __attribute__((constructor))
 static void why_cant_i_downvote_people_on_stack_overflow() {
     union {
@@ -20,6 +21,7 @@ static void why_cant_i_downvote_people_on_stack_overflow() {
         IOLog("u fail it\n");
     }
 }
+*/
 
 union dbgbcr {
     uint32_t val;
