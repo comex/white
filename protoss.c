@@ -106,9 +106,10 @@ static inline void write_debug(int num, uint32_t val) {
 }
 
 static uint32_t **get_current_debug_stuff_ptr() {
-    uint32_t ***task;
+    uint32_t **task;
     asm("mrc p15, 0, %0, c13, c0, 4" : "=r"(task));
-    return &task[0x334/4][0xf8/4];
+    //return &task[0x334/4][0xf8/4];
+    return &task[0x344/4];
 }
 
 int old_ie;
