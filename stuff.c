@@ -23,6 +23,7 @@ struct regs {
     uint32_t dbgdsar;
     uint32_t id_dfr0;
     uint32_t dbgdscr;
+    uint32_t tpidrprw;
 };
 
 int copy_phys(uint32_t paddr, uint32_t size, void *buf) {
@@ -31,6 +32,10 @@ int copy_phys(uint32_t paddr, uint32_t size, void *buf) {
 
 int kread(uint32_t addr, uint32_t size, void *buf) {
     return syscall(8, 2, addr, size, buf);
+}
+
+uint32_t read32(uint32_t addr) {
+    return syscall(8, 3, addr, false);
 }
 
 static const char *cacheable(uint32_t flags) {
@@ -174,7 +179,7 @@ static void dump_protoss() {
     size_t size = 0x4000 * sizeof(struct trace_entry);
     struct trace_entry *buf = malloc(size);
     memset(buf, 0, size);
-    assert(!syscall(8, 14, buf, size));
+    assert(!syscall(8, 14, 0, buf, size));
     struct trace_entry last;
     memset(&last, 0, sizeof(struct trace_entry));
     for(int i = 0; i < (size / sizeof(struct trace_entry)); i++) {
@@ -191,6 +196,32 @@ static void dump_protoss() {
     }
     free(buf);
 }
+
+struct watch_entry {
+    uint32_t r[13];
+    //uint32_t lr;
+    uint32_t pc;
+    uint32_t accessed_address;
+    uint32_t was_store;
+} __attribute__((packed));
+
+static void dump_watch() {
+    size_t size = 0x3fff * sizeof(struct watch_entry);
+    struct watch_entry *buf = malloc(size);
+    memset(buf, 0, size);
+    assert(!syscall(8, 14, 1, buf, size));
+    for(int i = 0; i < (size / sizeof(struct watch_entry)); i++) {
+        if(buf[i].accessed_address) {
+            printf("%.5d %08x %s <- %08x", i, buf[i].accessed_address, buf[i].was_store ? "STORE" : "LOAD", buf[i].pc);
+            for(int r = 0; r <= 12; r++)  {
+                printf(" R%d=%08x", r, buf[i].r[r]);
+            }
+            printf("\n");
+        }
+    }
+    free(buf);
+}
+
 
 uint32_t parse_hex(const char *optarg) {
     errno = 0;
@@ -217,21 +248,27 @@ int main(int argc, char **argv) {
         {"ioreg", required_argument, 0, 128},
         {"ioreg-matching", required_argument, 0, 134},
         {"ioreg-name-matching", required_argument, 0, 135},
-        {"metaclass", required_argument, 0, 134},
+        {"metaclass", required_argument, 0, 135},
         {"crash-kernel", no_argument, 0, 129},
         {"test-protoss", no_argument, 0, 130},
         {"vm_fault_enter", required_argument, 0, 131},
         {"weird", required_argument, 0, 132},
         {"vt", required_argument, 0, 133},
+        {"read-debug-reg", required_argument, 0, 136},
+        {"write-debug-reg", required_argument, 0, 137},
         {0, 0, 0, 0}
     };
     int idx;
-    while((c = getopt_long(argc, argv, "r012sl:w:L:W:uh:H:v:w:c:CPUd:Dt:", options, &idx)) != -1) {
+    while((c = getopt_long(argc, argv, "r012sl:w:L:W:uh:H:v:w:c:CPUd:Dt:a:A", options, &idx)) != -1) {
         did_something = true;
         switch(c) {
         case 'r':
             printf("ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x sctlr=%x scr=%x\n", regs.ttbr0, regs.ttbr1, regs.ttbcr, regs.contextidr, regs.sctlr, regs.scr);
             printf("dbgdidr=%x dbgdrar=%x dbgdsar=%x id_dfr0=%x dbgdscr=%x\n", regs.dbgdidr, regs.dbgdrar, regs.dbgdsar, regs.id_dfr0, regs.dbgdscr);
+            printf("tpidrprw=%x\n", regs.tpidrprw);
+            uint32_t thing1 = read32(regs.tpidrprw + 0x334);
+            uint32_t thing2 = read32(thing1 + 0xfc);
+            printf("thing1=%x thing2[*%x]=%x\n", thing1, thing1 + 0xfc, thing2);
             break;
         case '0':
             dump_pagetable(regs.ttbr0, 0, 0x1000);
@@ -309,6 +346,25 @@ int main(int argc, char **argv) {
         case 't':
             assert(!syscall(8, 20, parse_hex(optarg)));
             break;
+        case 'a': {
+            char *a = strsep(&optarg, "+");
+            assert(a && optarg);
+            assert(!syscall(8, 22, parse_hex(a), parse_hex(optarg)));
+            break;
+        }
+        case 'A':
+            dump_watch();
+            break;
+        case 136:
+            printf("%08x\n", syscall(8, 23, atoi(optarg)));
+            break;
+        case 137: {
+            char *a = strsep(&optarg, "=");
+            assert(a && optarg);
+            assert(!syscall(8, 24, atoi(a), parse_hex(optarg)));
+            break;
+        }
+
         case '?':
         default:
             goto usage;
@@ -345,6 +401,10 @@ usage:
            "    --crash-kernel:        crash the kernel\n"
            "    --test-protoss:        test protoss\n"
            "    -t addr:               hook for generic logging + trace (protoss)\n"
+           "    -a addr+mask:          watch range\n"
+           "    -A:                    dump watch results\n"
+           "    --read-debug-reg num:  dump debug reg\n"
+           "    --write-debug-reg num=val: write debug reg\n"
            , argv[0]);
     return 1;
 }

@@ -23,6 +23,23 @@ static void why_cant_i_downvote_people_on_stack_overflow() {
 }
 */
 
+union dbgwcr {
+    uint32_t val;
+    struct {
+        unsigned watchpoint_enable:1;
+        unsigned privileged_mode_control:2;
+        unsigned loadstore_access_control:2;
+        unsigned byte_address_select:8;
+        unsigned z3:1;
+        unsigned security_state_control:2;
+        unsigned linked_brp_num:4;
+        unsigned enable_linking:1;
+        unsigned z2:3;
+        unsigned address_range_mask:5;
+        unsigned z1:3;
+    } __attribute__((packed));
+};
+
 union dbgbcr {
     uint32_t val;
     struct {
@@ -50,38 +67,62 @@ struct trace_entry {
 static struct trace_entry *trace_start;
 extern struct trace_entry *trace_ptr;
 
+static const int num_trace_entries = 0x4000;
+static const int num_watch_entries = 0x4000;
+
+struct watch_entry {
+    uint32_t r[13];
+    //uint32_t lr;
+    uint32_t pc;
+    uint32_t accessed_address;
+    uint32_t was_store;
+} __attribute__((packed));
+
+static struct watch_entry *watch_start;
+extern struct watch_entry *watch_ptr;
+
 __attribute__((const))
 static inline void **vector_base() {
     return (void **) 0xffff0000;
 }
 
-void prefetch_handler();
+void trace_prefetch_handler();
+void watch_prefetch_handler();
+void watch_data_handler();
 extern void *prefetch_saved;
-static bool going;
+extern void *data_saved;
+static bool trace_going, watch_going;
 
-static const int num_trace_entries = 0x4000;
+static uint32_t debug_stuff[64];
 
 extern uint32_t volatile *dbg_map;
 
 static inline uint32_t read_debug(int num) {
-    uint32_t result = dbg_map[num];
-    return result;
+    return dbg_map[num];
 }
 
 static inline void write_debug(int num, uint32_t val) {
     dbg_map[num] = val;
 }
 
+static uint32_t **get_current_debug_stuff_ptr() {
+    uint32_t ***task;
+    asm("mrc p15, 0, %0, c13, c0, 4" : "=r"(task));
+    return &task[0x334/4][0xf8/4];
+}
+
 int old_ie;
 
 static void begin_debug() {
+    //IOLog("begin_debug\n");
     old_ie = ml_set_interrupts_enabled(0);
-    //write_debug(192, 0xc5acce55);
+    //write_debug(192, 0);
     write_debug(1004, 0xc5acce55);
-    //read_debug(197); // This is necessary!  I don't know why.
 }
 
 static void end_debug() {
+    write_debug(1004, 0);
+    //write_debug(192, 0xc5acce55);
     ml_set_interrupts_enabled(old_ie);
 }
 
@@ -92,24 +133,135 @@ static void init_debug() {
     void *map = IOService_mapDeviceMemoryWithIndex(reg_entry, 0, 0);
     if(!map) return;
     dbg_map = IOMemoryMap_getAddress(map);
-    /*begin_debug(); // interrupts disabled
+}
+
+uint32_t protoss_dump_debug_reg(uint32_t reg) {
+    //IOLog("dbg_map = %p\n", dbg_map);
+    uint32_t result;
+    begin_debug();
     read_debug(197);
-    uint32_t val = read_debug(34);
+    result = read_debug(reg);
     end_debug();
-    IOLog("%p %x\n", dbg_map, val);*/
+    return result;
+}
+
+int protoss_write_debug_reg(uint32_t reg, uint32_t val) {
+    //IOLog("%d %d\n", reg, val);
+    begin_debug();
+    read_debug(197);
+    write_debug(reg, val);
+    end_debug();
+    return 0;
+}
+
+int protoss_go_watch(uint32_t address, uint32_t mask) {
+    if((mask & (mask + 1)) || mask == 0xffffffff) {
+        IOLog("protoss_go_watch: invalid mask value %x\n", mask);
+        return -1;
+    }
+
+    if(address & mask) {
+        IOLog("protoss_go_watch: address (%08x) & mask (%x) is nonzero\n", address, mask);
+        return -1;
+    }
+
+    if(address & 3) {
+        IOLog("protoss_go_watch: address (%08x) & 3 is nonzero\n", address);
+        return -1;
+    }
+
+    uint32_t mask_bits = 0;
+    while(mask) {
+        mask_bits++;
+        mask >>= 1;
+    }
+
+    if(mask_bits == 1 || mask_bits == 2) mask_bits = 0;
+
+    if(trace_going || watch_going) {
+        IOLog("protoss_go_watch: already enabled\n");
+        return -1;
+    }
+
+    if(vector_base()[4] != (void *) 0xe59ff018 || vector_base()[3] != (void *) 0xe59ff018) {
+        return -1;
+    }
+
+    watch_going = true;
+    
+    if(!watch_start) watch_start = IOMalloc(num_watch_entries * sizeof(struct watch_entry));
+    memset(watch_start, 0, (num_watch_entries - 1) * sizeof(struct watch_entry));
+    memset(&watch_start[num_watch_entries - 1], 0xff, sizeof(struct watch_entry));
+    watch_ptr = &watch_start[1];
+
+    data_saved = vector_base()[4+8];
+    vector_base()[4+8] = (void *) watch_data_handler;
+    prefetch_saved = vector_base()[3+8];
+    vector_base()[3+8] = (void *) watch_prefetch_handler;
+    
+    union dbgwcr dbgwcrN;
+    dbgwcrN.val = 0;
+    uint32_t dbgwvrN;
+
+    dbgwcrN.z1 = 0;
+    dbgwcrN.address_range_mask = mask_bits;
+    dbgwcrN.z2 = 0;
+    dbgwcrN.enable_linking = 0;
+    dbgwcrN.linked_brp_num = 0;
+    dbgwcrN.security_state_control = 0;
+    dbgwcrN.z3 = 0;
+    dbgwcrN.byte_address_select = 0xff;
+    dbgwcrN.loadstore_access_control = 3; // load or store
+    dbgwcrN.privileged_mode_control = 1; // privileged only
+    dbgwcrN.watchpoint_enable = 1;
+    
+    union dbgbcr dbgbcrN;
+    dbgbcrN.val = 0;
+    uint32_t dbgbvrN;
+
+    dbgbcrN.z1 = 0;
+    dbgbcrN.address_range_mask = 0;
+    dbgbcrN.z2 = 0;
+    dbgbcrN.dbgbvr_match_or_mismatch = 1; // mismatch
+    dbgbcrN.dbgbvr_iva_or_context_id = 0; // IVA
+    dbgbcrN.dbgbvr_unlinked_or_linked = 0; // unlinked
+    dbgbcrN.linked_brp_num = 0;
+    dbgbcrN.security_state_control = 0; 
+    dbgbcrN.byte_address_select = 0xf;
+    dbgbcrN.z4 = 0;
+    dbgbcrN.privileged_mode_control = 0; // user, system, svc *but not* exception
+    dbgbcrN.breakpoint_enable = 0;
+    
+    dbgbvrN = 0xdeadbeec;
+
+    dbgwvrN = address;
+
+    memset(debug_stuff, 0, sizeof(debug_stuff));
+    debug_stuff[-64 + 64 + 0] = dbgbvrN;
+    debug_stuff[-64 + 80 + 0] = dbgbcrN.val;
+    debug_stuff[-64 + 96 + 0] = dbgwvrN;
+    debug_stuff[-64 + 112 + 0] = dbgwcrN.val;
+
+    uint32_t **dsp = get_current_debug_stuff_ptr();
+    
+    *dsp = debug_stuff;
+
+    IOLog("*%p = %p\n", dsp, debug_stuff);
+
+    return 0;
 }
 
 int protoss_go() {
-    if(going) {
+    if(trace_going || watch_going) {
         IOLog("protoss_go: already enabled\n");
         return -1;
     }
     
-    going = true;
-
     if(vector_base()[3] != (void *) 0xe59ff018) {
         return -1;
     }
+    
+    trace_going = true;
 
     if(!trace_start) trace_start = IOMalloc(num_trace_entries * sizeof(struct trace_entry));
     memset(trace_start, 0, (num_trace_entries - 1) * sizeof(struct trace_entry));
@@ -118,7 +270,7 @@ int protoss_go() {
 
     // We can't ever branch to 80xxxxxx, so overwrite it here
     prefetch_saved = vector_base()[3+8];
-    vector_base()[3+8] = (void *) prefetch_handler;
+    vector_base()[3+8] = (void *) trace_prefetch_handler;
 
     union dbgbcr dbgbcr5, dbgbcr4;
     dbgbcr5.val = dbgbcr4.val = 0;
@@ -162,7 +314,6 @@ int protoss_go() {
     uint32_t dbgdscr = read_debug(34);
     dbgdscr |= 0x8000; // turn on debug
     write_debug(34, dbgdscr);
-    // watchpoint
     for(int i = 0; i < 16; i++) {
         write_debug(80 + i, 0);
         write_debug(112 + i, 0);
@@ -186,14 +337,15 @@ int protoss_go() {
 }
 
 void protoss_stop() {
-    if(going) {
+    if(trace_going || watch_going) {
         begin_debug(); // interrupts disabled
         read_debug(197);
         uint32_t dbgdscr = read_debug(34);
+        uint32_t old_dbgdscr = dbgdscr;
         dbgdscr |= 0x8000; // turn on debug
         write_debug(34, dbgdscr);
-        // watchpoint
         for(int i = 0; i < 16; i++) {
+            // bcr and wcr
             write_debug(80 + i, 0);
             write_debug(112 + i, 0);
         }
@@ -203,25 +355,60 @@ void protoss_stop() {
         write_debug(34, dbgdscr);
         end_debug();
     }
+
+    watch_going = false;
+
+    uint32_t **dsp = get_current_debug_stuff_ptr();
+    if(*dsp == debug_stuff) {
+        *dsp = 0;
+    }
+
+    if(trace_going) {
+        trace_going = false;
+    }
+
     if(prefetch_saved) {
         vector_base()[3+8] = prefetch_saved;
         prefetch_saved = NULL;
+    }
+    if(data_saved) {
+        vector_base()[4+8] = data_saved;
+        data_saved = NULL;
     }
 }
 
 void protoss_unload() {
     protoss_stop();
     if(trace_start) {
+        IOLog("trace_ptr was %d\n", trace_ptr - trace_start);
         IOFree(trace_start);
         trace_start = NULL;
         trace_ptr = NULL;
     }
+    if(watch_start) {
+        //IOLog("watch_ptr was %d\n", watch_ptr - watch_start);
+        IOFree(watch_start);
+        watch_start = NULL;
+        watch_ptr = NULL;
+    }
 }
 
-int protoss_get_records(user_addr_t buf, uint32_t bufsize) {
-    if(!trace_start) return -1;
-    size_t size = num_trace_entries * sizeof(struct trace_entry);
+int protoss_get_records(int type, user_addr_t buf, uint32_t bufsize) {
+    size_t size;
+    const void *ptr;
+    switch(type) {
+    case 0:
+        ptr = trace_start;
+        size = num_trace_entries * sizeof(struct trace_entry);
+        break;
+    case 1:
+        ptr = watch_start;
+        size = num_watch_entries * sizeof(struct watch_entry);
+        break;
+    default:
+        return -1;
+    }
+    if(!ptr) return -1;
     if(size > bufsize) size = bufsize;
-    copyout(trace_start, buf, size);
-    return 0;
+    return copyout(ptr, buf, size);
 }

@@ -8,9 +8,12 @@ void creep_get_records(user_addr_t buf, uint32_t bufsize);
 void creep_stop();
 // protoss.c
 int protoss_go();
-int protoss_get_records(user_addr_t buf, uint32_t bufsize);
+int protoss_go_watch(uint32_t address, uint32_t mask);
+int protoss_get_records(int type, user_addr_t buf, uint32_t bufsize);
 void protoss_stop();
 void protoss_unload();
+uint32_t protoss_dump_debug_reg(uint32_t reg);
+int protoss_write_debug_reg(uint32_t reg, uint32_t val);
 
 struct mysyscall_args {
     uint32_t mode;
@@ -23,6 +26,8 @@ struct mysyscall_args {
 
 #define VOID_STAR_A1_THROUGH_7 void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7
 #define A1_THROUGH_7 a1, a2, a3, a4, a5, a6, a7
+
+
 static void *(*vt_old)(VOID_STAR_A1_THROUGH_7);
 static void *vt_hook(VOID_STAR_A1_THROUGH_7) {
     void *result = vt_old(A1_THROUGH_7);
@@ -207,6 +212,7 @@ struct regs {
     uint32_t dbgdsar;
     uint32_t id_dfr0;
     uint32_t dbgdscr;
+    uint32_t tpidrprw;
 };
 
 int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
@@ -230,6 +236,7 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         asm("mrc p14, 0, %0, c2, c0, 0" :"=r"(regs.dbgdsar) :);
         asm("mrc p15, 0, %0, c0, c1, 2" :"=r"(regs.id_dfr0) :);
         asm("mrc p14, 0, %0, c0, c1, 0" : "=r"(regs.dbgdscr));
+        asm("mrc p15, 0, %0, c13, c0, 4" : "=r"(regs.tpidrprw));
         int error;
         if(error = copyout(&regs, (user_addr_t) uap->b, sizeof(regs))) return error;
         *retval = 0;
@@ -317,7 +324,7 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         *retval = ioreg(uap->b, (user_addr_t) uap->c);
         break;
     case 14:
-        *retval = protoss_get_records((user_addr_t) uap->b, uap->c);
+        *retval = protoss_get_records(uap->b, (user_addr_t) uap->c, uap->d);
         break;
     case 15:
         if(!(*retval = protoss_go())) {
@@ -340,6 +347,15 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         break;
     case 21:
         *retval = lookup_metaclass(uap->b);
+        break;
+    case 22:
+        *retval = protoss_go_watch(uap->b, uap->c);
+        break;
+    case 23:
+        *retval = protoss_dump_debug_reg(uap->b);
+        break;
+    case 24:
+        *retval = protoss_write_debug_reg(uap->b, uap->c);
         break;
     default:
         IOLog("Unknown mode %d\n", uap->mode);
