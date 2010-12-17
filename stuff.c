@@ -176,7 +176,7 @@ struct trace_entry {
 } __attribute__((packed));
 
 static void dump_protoss() {
-    size_t size = 0x4000 * sizeof(struct trace_entry);
+    size_t size = 0x3fff * sizeof(struct trace_entry);
     struct trace_entry *buf = malloc(size);
     memset(buf, 0, size);
     assert(!syscall(8, 14, 0, buf, size));
@@ -202,6 +202,7 @@ struct watch_entry {
     //uint32_t lr;
     uint32_t pc;
     uint32_t accessed_address;
+    uint32_t accessed_value;
     uint32_t was_store;
 } __attribute__((packed));
 
@@ -212,7 +213,7 @@ static void dump_watch() {
     assert(!syscall(8, 14, 1, buf, size));
     for(int i = 0; i < (size / sizeof(struct watch_entry)); i++) {
         if(buf[i].accessed_address) {
-            printf("%.5d %08x %s <- %08x", i, buf[i].accessed_address, buf[i].was_store ? "STORE" : "LOAD", buf[i].pc);
+            printf("%.5d %08x %s%08x] <- %08x", i, buf[i].accessed_address, buf[i].was_store ? "STORE [was " : "LOAD [", buf[i].accessed_value, buf[i].pc);
             for(int r = 0; r <= 12; r++)  {
                 printf(" R%d=%08x", r, buf[i].r[r]);
             }
@@ -222,6 +223,14 @@ static void dump_watch() {
     free(buf);
 }
 
+static void get_object_info(uint32_t object) {
+    char buf[128];
+    int ret = syscall(8, 25, object, buf, sizeof(buf));
+    assert(ret >= 0);
+    write(1, buf, ret);
+    int retain_count = syscall(8, 26, object);
+    printf(" retain=%d\n", retain_count);
+}
 
 uint32_t parse_hex(const char *optarg) {
     errno = 0;
@@ -259,7 +268,7 @@ int main(int argc, char **argv) {
         {0, 0, 0, 0}
     };
     int idx;
-    while((c = getopt_long(argc, argv, "r012sl:w:L:W:uh:H:v:w:c:CPUd:Dt:a:A", options, &idx)) != -1) {
+    while((c = getopt_long(argc, argv, "r012sl:w:L:W:uh:H:v:w:c:CPUd:Dt:a:Ao:", options, &idx)) != -1) {
         did_something = true;
         switch(c) {
         case 'r':
@@ -364,7 +373,9 @@ int main(int argc, char **argv) {
             assert(!syscall(8, 24, atoi(a), parse_hex(optarg)));
             break;
         }
-
+        case 'o':
+            get_object_info(parse_hex(optarg));
+            break;
         case '?':
         default:
             goto usage;
@@ -405,6 +416,7 @@ usage:
            "    -A:                    dump watch results\n"
            "    --read-debug-reg num:  dump debug reg\n"
            "    --write-debug-reg num=val: write debug reg\n"
+           "    -o addr:               get object info\n"
            , argv[0]);
     return 1;
 }

@@ -27,7 +27,6 @@ struct mysyscall_args {
 #define VOID_STAR_A1_THROUGH_7 void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7
 #define A1_THROUGH_7 a1, a2, a3, a4, a5, a6, a7
 
-
 static void *(*vt_old)(VOID_STAR_A1_THROUGH_7);
 static void *vt_hook(VOID_STAR_A1_THROUGH_7) {
     void *result = vt_old(A1_THROUGH_7);
@@ -356,6 +355,16 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         break;
     case 24:
         *retval = protoss_write_debug_reg(uap->b, uap->c);
+        break;
+    case 25: {
+        const char *name = OSMetaClass_getClassName(get_metaclass((void *) uap->b));
+        size_t done;
+        int result = copyoutstr(name, uap->c, uap->d, &done);
+        *retval = result ? result : done;
+        break;
+    }
+    case 26:
+        *retval = OSObject_getRetainCount((void *) uap->b);
         break;
     default:
         IOLog("Unknown mode %d\n", uap->mode);

@@ -4,24 +4,6 @@
 
 #include <stdint.h>
 #include "kinc.h"
-/*
-__attribute__((constructor))
-static void why_cant_i_downvote_people_on_stack_overflow() {
-    union {
-        struct {
-            unsigned a:16;
-            unsigned b:16;
-        };
-        unsigned int c;
-    } u;
-    u.a = 0xbeef;
-    u.b = 0xdead;
-
-    if(u.c != 0xdeadbeef) { 
-        IOLog("u fail it\n");
-    }
-}
-*/
 
 union dbgwcr {
     uint32_t val;
@@ -75,6 +57,7 @@ struct watch_entry {
     //uint32_t lr;
     uint32_t pc;
     uint32_t accessed_address;
+    uint32_t accessed_value;
     uint32_t was_store;
 } __attribute__((packed));
 
@@ -85,6 +68,12 @@ __attribute__((const))
 static inline void **vector_base() {
     return (void **) 0xffff0000;
 }
+
+// :(
+extern uint32_t ter_patch_loc[]
+asm("$_44_03_99_e5_f8_60_98_e5_06_00_50_e1_01_00_00_0a");
+static uint32_t ter_orig[4];
+static bool ter_patched;
 
 void trace_prefetch_handler();
 void watch_prefetch_handler();
@@ -103,13 +92,6 @@ static inline uint32_t read_debug(int num) {
 
 static inline void write_debug(int num, uint32_t val) {
     dbg_map[num] = val;
-}
-
-static uint32_t **get_current_debug_stuff_ptr() {
-    uint32_t **task;
-    asm("mrc p15, 0, %0, c13, c0, 4" : "=r"(task));
-    //return &task[0x334/4][0xf8/4];
-    return &task[0x344/4];
 }
 
 int old_ie;
@@ -243,12 +225,27 @@ int protoss_go_watch(uint32_t address, uint32_t mask) {
     debug_stuff[-64 + 96 + 0] = dbgwvrN;
     debug_stuff[-64 + 112 + 0] = dbgwcrN.val;
 
-    uint32_t **dsp = get_current_debug_stuff_ptr();
+    IOLog("writing to %p\n", ter_patch_loc);
+
+    old_ie = ml_set_interrupts_enabled(0);
+
+    for(int i = 0; i < 4; i++) ter_orig[i] = ter_patch_loc[i];
+
+    ter_patch_loc[0] = 0xe59f0000;
+    ter_patch_loc[1] = 0xea000000;
+    ter_patch_loc[2] = (uint32_t) debug_stuff;
+    ter_patch_loc[3] = 0xe1a00000; // nop
     
-    *dsp = debug_stuff;
+    flush_cache(ter_patch_loc, sizeof(ter_orig));
+    
+    ter_patched = true;
 
-    IOLog("*%p = %p\n", dsp, debug_stuff);
+    ml_set_interrupts_enabled(old_ie);
 
+    IOSleep(1);
+
+    IOLog("%08x %08x %08x %08x\n", ter_orig[0], ter_orig[1], ter_orig[2], ter_orig[3]);
+    
     return 0;
 }
 
@@ -357,21 +354,30 @@ void protoss_stop() {
         end_debug();
     }
 
-    watch_going = false;
-
-    uint32_t **dsp = get_current_debug_stuff_ptr();
-    if(*dsp == debug_stuff) {
-        *dsp = 0;
-    }
-
     if(trace_going) {
         trace_going = false;
+    }
+    
+    watch_going = false;
+
+    if(ter_patched) {
+        memset(debug_stuff, 0, sizeof(debug_stuff));
+        old_ie = ml_set_interrupts_enabled(0);
+
+        for(int i = 0; i < 4; i++) ter_patch_loc[i] = ter_orig[i];
+    
+        flush_cache(ter_patch_loc, sizeof(ter_orig));
+
+        ter_patched = false;
+
+        ml_set_interrupts_enabled(old_ie);
     }
 
     if(prefetch_saved) {
         vector_base()[3+8] = prefetch_saved;
         prefetch_saved = NULL;
     }
+
     if(data_saved) {
         vector_base()[4+8] = data_saved;
         data_saved = NULL;

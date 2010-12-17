@@ -44,7 +44,7 @@ int creep_go(void *start, int size) {
             //IOLog("%08x\n", record->address);
             // 0xde* are permanently undefined
             *p = 0xdeca;
-            invalidate_icache((vm_offset_t) p, 2, false);
+            flush_cache(p, 2);
         }
         size -= 2;
         p++;
@@ -79,7 +79,7 @@ void creep_stop() {
         record_start = r->next;
         if(!r->value) {
             *((uint16_t *) (r->address)) = r->actual_instruction;
-            invalidate_icache((vm_offset_t) (r->address), 2, false);
+            flush_cache((void *) r->address, 2);
         }
         IOFree(r);
     }

@@ -109,39 +109,7 @@ _watch_data_handler:
 
     str lr, saved_lr
 
-    ldr sp, _watch_ptr
-    cmp sp, #0
-    beq fin2
-    ldr lr, [sp]
-    cmp lr, #0
-    bne fin2 ;# out of space
-    
-    # r[0-12],
-    ldr sp, _watch_ptr
-    stmia sp!, {r0-r12}
-
-    # pc
-    ldr lr, saved_lr
-    stmia sp!, {lr}
-
-    # accessed_address
-    mrs lr, spsr
-    tst lr, #(1 << 5)
-    ldr lr, _dbg_map
-    ldr lr, [lr, #0x018]
-    subeq lr, #8
-    subne lr, #4
-    stmia sp!, {lr}
-
-    # was_store
-    mrc p15, 0, lr, c5, c0, 0
-    ands lr, #(1 << 11)
-    movne lr, #1
-    stmia sp!, {lr}
-    
-    str sp, _watch_ptr
-
-fin2:
+bpstuff:
     ldr sp, _dbg_map
     ldr lr, c5acce55
     str lr, [sp, #0xfb0]
@@ -161,7 +129,39 @@ fin2:
     ldr lr, [sp, #0x140]
     orr lr, #1
     str lr, [sp, #0x140]
+# done
 
+    ldr sp, _watch_ptr
+    cmp sp, #0
+    beq fin2
+    ldr lr, [sp]
+    cmp lr, #0
+    bne fin2 ;# out of space
+    
+    # r[0-12], pc
+    ldr sp, _watch_ptr
+    ldr lr, saved_lr
+    sub lr, #8
+    stmia sp!, {r0-r12, lr}
+
+    # accessed_address
+    # this is technically undefined
+    mrc p15, 0, lr, c6, c0, 0
+    stmia sp!, {lr}
+
+    # accessed_value 
+    ldr lr, [lr]
+    stmia sp!, {lr}
+
+    # was_store
+    mrc p15, 0, lr, c5, c0, 0
+    ands lr, #(1 << 11)
+    movne lr, #1
+    stmia sp!, {lr}
+    
+    str sp, _watch_ptr
+
+fin2:
     ldr lr, saved_lr
     subs pc, lr, #8
 

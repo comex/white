@@ -53,7 +53,7 @@ void *hook(void *addr, void *replacement, bool force) {
     vm_protect(kernel_map, cast(vm_address_t, alloc), 0x1000, 0, 5);
 
     *storeto = insn;
-    invalidate_icache(cast(vm_offset_t, storeto), 4, false);
+    flush_cache(storeto, 4);
     return (void *) stub;
 }
 
@@ -62,7 +62,7 @@ void unhook(void *stub) {
     stub = cast(char *, stub) - 1;
     uint32_t *stub_ = stub;
     *((uint32_t *) ((stub_[2] - 4) & ~1)) = stub_[0];
-    invalidate_icache(cast(vm_offset_t, stub), 4, false);
+    flush_cache(stub, 4);
 
     vm_deallocate(kernel_map, cast(vm_address_t, cast(uint32_t, stub) & 0xfffff000), 0x1000);
     IOLog("unhooked %p\n", stub);

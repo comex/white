@@ -10,7 +10,11 @@ extern uint32_t *kernel_pmap;
 
 LC void *memset(void *b, int c, size_t len);
 
+LC void *memcpy(void *restrict s1, const void *restrict s2, size_t len);
+
 LC void invalidate_icache(vm_offset_t addr, unsigned cnt, bool phys);
+
+LC void flush_dcache(vm_offset_t addr, unsigned cnt, bool phys);
 
 LC void *IOMalloc(size_t size);
 LC void *IOFree(void *p);
@@ -26,11 +30,19 @@ LC int copyout(const void *kernel_addr, user_addr_t user_addr, vm_size_t nbytes)
 
 LC int copyinstr(const user_addr_t uaddr, void *kaddr, size_t len, size_t *done);
 
+LC int copyoutstr(const void *kaddr, user_addr_t uaddr, size_t len, size_t *done);
+
 LC void IOLog(const char *msg, ...) __attribute__((format (printf, 1, 2)));
 
 LC void IOSleep(unsigned int milliseconds);
 
 LC int ml_set_interrupts_enabled(int enabled);
+
+static inline void flush_cache(void *addr, unsigned cnt) {
+    flush_dcache((vm_offset_t) addr, cnt, false);
+    invalidate_icache((vm_offset_t) addr, cnt, false);
+}
+
 
 typedef enum IODirection { 
     kIODirectionNone = 0, 
@@ -75,6 +87,16 @@ asm("__ZN8OSSymbol11withCStringEPKc");
 
 LC void *OSMetaClass_getMetaClassWithName(void *symbol)
 asm("__ZN11OSMetaClass20getMetaClassWithNameEPK8OSSymbol");
+
+LC void *OSMetaClass_getClassName(void *metaclass)
+asm("__ZNK11OSMetaClass12getClassNameEv");
+
+static inline void *get_metaclass(void *object) {
+    return ((void *(***)(void *)) object)[0][0x1c/4](object);
+}
+
+LC int OSObject_getRetainCount(void *object)
+asm("__ZNK8OSObject14getRetainCountEv");
 
 static inline void delete_object(void *object) {
     ((void (***)(void *)) object)[0][1](object);
