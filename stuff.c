@@ -10,8 +10,10 @@
 #include <fcntl.h>
 #include <stdbool.h>
 #include <getopt.h>
+#include <mach/mach_time.h>
 
 struct regs {
+    uint32_t cpsr;
     uint32_t ttbr0;
     uint32_t ttbr1;
     uint32_t ttbcr;
@@ -251,7 +253,6 @@ int main(int argc, char **argv) {
     int c;
     bool did_something = false;
     struct regs regs;
-    assert(!syscall(8, 0, &regs));
     
     struct option options[] = {
         {"ioreg", required_argument, 0, 128},
@@ -265,6 +266,8 @@ int main(int argc, char **argv) {
         {"vt", required_argument, 0, 133},
         {"read-debug-reg", required_argument, 0, 136},
         {"write-debug-reg", required_argument, 0, 137},
+        {"do-something", no_argument, 0, 138},
+        {"time", no_argument, 0, 139},
         {0, 0, 0, 0}
     };
     int idx;
@@ -272,7 +275,8 @@ int main(int argc, char **argv) {
         did_something = true;
         switch(c) {
         case 'r':
-            printf("ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x sctlr=%x scr=%x\n", regs.ttbr0, regs.ttbr1, regs.ttbcr, regs.contextidr, regs.sctlr, regs.scr);
+            assert(!syscall(8, 0, &regs));
+            printf("cpsr=%x ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x sctlr=%x scr=%x\n", regs.cpsr, regs.ttbr0, regs.ttbr1, regs.ttbcr, regs.contextidr, regs.sctlr, regs.scr);
             printf("dbgdidr=%x dbgdrar=%x dbgdsar=%x id_dfr0=%x dbgdscr=%x\n", regs.dbgdidr, regs.dbgdrar, regs.dbgdsar, regs.id_dfr0, regs.dbgdscr);
             printf("tpidrprw=%x\n", regs.tpidrprw);
             uint32_t thing1 = read32(regs.tpidrprw + 0x334);
@@ -280,12 +284,15 @@ int main(int argc, char **argv) {
             printf("thing1=%x thing2[*%x]=%x\n", thing1, thing1 + 0xfc, thing2);
             break;
         case '0':
+            assert(!syscall(8, 0, &regs));
             dump_pagetable(regs.ttbr0, 0, 0x1000);
             break;
         case '1':
+            assert(!syscall(8, 0, &regs));
             dump_pagetable(regs.ttbr1, 0, 0x4000);
             break;
         case '2':
+            assert(!syscall(8, 0, &regs));
             dump_pagetable(regs.ttbr1 - 0x4000, 0, 0x4000);
             break;
         case 's':
@@ -376,6 +383,16 @@ int main(int argc, char **argv) {
         case 'o':
             get_object_info(parse_hex(optarg));
             break;
+        case 138:
+            // do_something
+            printf("%08x\n", syscall(8, 27));
+            break;
+        case 139: {
+            mach_timebase_info_data_t info;
+            mach_timebase_info(&info);
+            printf("%llu * %d/%d\n", mach_absolute_time(), info.numer, info.denom);
+            break;
+        }
         case '?':
         default:
             goto usage;
@@ -417,6 +434,8 @@ usage:
            "    --read-debug-reg num:  dump debug reg\n"
            "    --write-debug-reg num=val: write debug reg\n"
            "    -o addr:               get object info\n"
+           "    --do-something:        so transient I won't make it a real option\n"
+           "    --time:                mach_absolute_time\n"
            , argv[0]);
     return 1;
 }

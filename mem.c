@@ -212,8 +212,6 @@ mmrw(dev, uio, rw)
 			break;
 		uio_update(uio, c);
 	}
-    printf("well %d %d\n", aa, error);
-    printf("%d\n", (int) uio_resid(uio));
 	return (error);
 fault:
 	return (EFAULT);

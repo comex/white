@@ -168,6 +168,11 @@ static uint32_t lookup_metaclass(user_addr_t name) {
     release_object(symbol);
     return result;
 }
+
+static int do_something() {
+    return 0;    
+}
+
 // from the loader
 extern struct sysent sysent[];
 struct sysent saved_sysent;
@@ -200,6 +205,7 @@ void fini() {
 
 // keep in sync with stuff.c
 struct regs {
+    uint32_t cpsr;
     uint32_t ttbr0;
     uint32_t ttbr1;
     uint32_t ttbcr;
@@ -223,17 +229,18 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
     switch(uap->mode) {
     case 0: { // get regs
         struct regs regs;
-        asm("mrc p15, 0, %0, c2, c0, 0" :"=r"(regs.ttbr0) :);
-        asm("mrc p15, 0, %0, c2, c0, 1" :"=r"(regs.ttbr1) :);
-        asm("mrc p15, 0, %0, c2, c0, 2" :"=r"(regs.ttbcr) :);
-        asm("mrc p15, 0, %0, c13, c0, 1" :"=r"(regs.contextidr) :);
-        asm("mrc p15, 0, %0, c1, c0, 0" :"=r"(regs.sctlr) :);
+        asm("mrs %0, cpsr" :"=r"(regs.cpsr));
+        asm("mrc p15, 0, %0, c2, c0, 0" :"=r"(regs.ttbr0));
+        asm("mrc p15, 0, %0, c2, c0, 1" :"=r"(regs.ttbr1));
+        asm("mrc p15, 0, %0, c2, c0, 2" :"=r"(regs.ttbcr));
+        asm("mrc p15, 0, %0, c13, c0, 1" :"=r"(regs.contextidr));
+        asm("mrc p15, 0, %0, c1, c0, 0" :"=r"(regs.sctlr));
         //asm("mcr p15, 0, %0, c1, c1, 0" :: "r"(1 << 6));
-        asm("mrc p15, 0, %0, c1, c1, 0" :"=r"(regs.scr) :);
-        asm("mrc p14, 0, %0, c0, c0, 0" :"=r"(regs.dbgdidr) :);
-        asm("mrc p14, 0, %0, c1, c0, 0" :"=r"(regs.dbgdrar) :);
-        asm("mrc p14, 0, %0, c2, c0, 0" :"=r"(regs.dbgdsar) :);
-        asm("mrc p15, 0, %0, c0, c1, 2" :"=r"(regs.id_dfr0) :);
+        asm("mrc p15, 0, %0, c1, c1, 0" :"=r"(regs.scr));
+        asm("mrc p14, 0, %0, c0, c0, 0" :"=r"(regs.dbgdidr));
+        asm("mrc p14, 0, %0, c1, c0, 0" :"=r"(regs.dbgdrar));
+        asm("mrc p14, 0, %0, c2, c0, 0" :"=r"(regs.dbgdsar));
+        asm("mrc p15, 0, %0, c0, c1, 2" :"=r"(regs.id_dfr0));
         asm("mrc p14, 0, %0, c0, c1, 0" : "=r"(regs.dbgdscr));
         asm("mrc p15, 0, %0, c13, c0, 4" : "=r"(regs.tpidrprw));
         int error;
@@ -365,6 +372,9 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
     }
     case 26:
         *retval = OSObject_getRetainCount((void *) uap->b);
+        break;
+    case 27:
+        *retval = do_something();
         break;
     default:
         IOLog("Unknown mode %d\n", uap->mode);
