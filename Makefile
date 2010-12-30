@@ -19,7 +19,8 @@ chain-kern.dylib: chain-kern.c kinc.h
 chain-user: chain-user.c
 	$(GCC) $(CFLAGS) -o chain-user chain-user.c
 
-white_loader: data/libdata.a white_loader.o
+white_loader: white_loader.o
+	make -C data GCC="$(GCC)"
 	$(GCC) $(CFLAGS) -o $@ white_loader.o -Ldata -ldata
 ifneq ($(shell which lipo),)
 	bash -c 'if [ -n "`lipo -info $@ | grep arm`" ]; then ldid -Sent.plist $@; fi'
@@ -27,4 +28,5 @@ endif
 
 
 clean:
+	make -C data clean
 	rm -rf white_loader stuff *.o kcode.dylib mem.dylib chain-user chain-kern.dylib *.dSYM
