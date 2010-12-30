@@ -1,6 +1,6 @@
 GCC ?= /Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/gcc-4.2 -arch armv7 -isysroot /Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS4.2.sdk/ -mapcs-frame -fomit-frame-pointer -mthumb -fno-builtin-printf -fno-builtin-memset -fno-builtin-memcpy
-CFLAGS ?= -g3 -std=gnu99 -Os 
-all: stuff kcode.dylib mem.dylib
+CFLAGS += -g3 -std=gnu99 -Os -I.
+all: stuff white_loader kcode.dylib mem.dylib
 %.o: %.c kinc.h
 	$(GCC) $(CFLAGS) -c -o $@ $< -DIMG3_SUPPORT -Wreturn-type
 %.o: %.S
@@ -18,5 +18,13 @@ chain-kern.dylib: chain-kern.c kinc.h
 	$(GCC) $(CFLAGS) -dynamiclib -g -o chain-kern.dylib chain-kern.c -fwhole-program -nostdlib -nodefaultlibs -lgcc -undefined dynamic_lookup -read_only_relocs suppress -fno-builtin
 chain-user: chain-user.c
 	$(GCC) $(CFLAGS) -o chain-user chain-user.c
+
+white_loader: data/libdata.a white_loader.o
+	$(GCC) $(CFLAGS) -o $@ white_loader.o -Ldata -ldata
+ifneq ($(shell which lipo),)
+	bash -c 'if [ -n "`lipo -info $@ | grep arm`" ]; then ldid -Sent.plist $@; fi'
+endif
+
+
 clean:
-	rm -rf loader loader_ data/*.o stuff *.o kcode.dylib mem.dylib chain-user chain-kern.dylib *.dSYM
+	rm -rf white_loader stuff *.o kcode.dylib mem.dylib chain-user chain-kern.dylib *.dSYM
