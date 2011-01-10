@@ -3,7 +3,36 @@
 #define LC __attribute__((long_call))
 
 typedef uint32_t user_addr_t, vm_size_t, vm_address_t, boolean_t, size_t, vm_offset_t, vm_prot_t;
-typedef void *vm_map_t;
+typedef int32_t pid_t;
+
+typedef struct pmap {
+    void *virt;
+    uint32_t phys;
+    // ...
+} *pmap_t;
+
+typedef struct _vm_map {
+    char whatever[0x24];
+    pmap_t pmap;
+} *vm_map_t;
+
+struct proc {
+    void *prev;
+    void *next;
+    pid_t p_pid;
+    struct task *task;
+};
+
+typedef uint32_t lck_mtx_t[3];
+
+struct task {
+    // lock
+    lck_mtx_t lock;
+    uint32_t ref_count;
+    boolean_t active;
+    boolean_t halting;
+    vm_map_t map;
+};
 
 extern vm_map_t kernel_map;
 extern uint32_t *kernel_pmap;
@@ -37,6 +66,8 @@ LC void IOLog(const char *msg, ...) __attribute__((format (printf, 1, 2)));
 LC void IOSleep(unsigned int milliseconds);
 
 LC int ml_set_interrupts_enabled(int enabled);
+
+LC struct proc *proc_find(int pid);
 
 static inline void flush_cache(void *addr, unsigned cnt) {
     flush_dcache((vm_offset_t) addr, cnt, false);
@@ -113,7 +144,6 @@ static inline void *retain_object(void *object) {
 
 // copied from xnu
 
-struct proc;
 typedef int32_t sy_call_t(struct proc *, void *, int *);
 typedef void    sy_munge_t(const void *, void *);
 
@@ -132,7 +162,6 @@ struct sysent {     /* system call table */
 #define _SYSCALL_RET_INT_T      1   
 
 // end copied
-
 
 #define prop(a, off, typ) *((typ *)(((char *) (a))+(off)))
 

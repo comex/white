@@ -34,6 +34,15 @@ static void *vt_hook(VOID_STAR_A1_THROUGH_7) {
     return result;
 }
 
+static void *(*ttbr_old)(VOID_STAR_A1_THROUGH_7);
+static void *ttbr_hook(VOID_STAR_A1_THROUGH_7) {
+    uint32_t ttbr0, ttbr1;
+    asm("mrc p15, 0, %0, c2, c0, 0" :"=r"(ttbr0));
+    asm("mrc p15, 0, %0, c2, c0, 1" :"=r"(ttbr1));
+    IOLog("ttbr_hook: from:%p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p ttbr0=%x ttbr1=%x\n", __builtin_return_address(0), __builtin_return_address(1), __builtin_return_address(2), A1_THROUGH_7, ttbr0, ttbr1);
+    return ttbr_old(A1_THROUGH_7);
+}
+
 static void *(*logger_old)(VOID_STAR_A1_THROUGH_7);
 static void *logger_hook(VOID_STAR_A1_THROUGH_7) {
     void *result = logger_old(A1_THROUGH_7);
@@ -169,6 +178,12 @@ static uint32_t lookup_metaclass(user_addr_t name) {
     return result;
 }
 
+uint32_t get_proc_map(int pid) {
+    struct proc *p = proc_find(pid);
+    if(!p) return 0;
+    return p->task->map->pmap->phys;
+}
+
 static int do_something() {
     return 0;    
 }
@@ -191,6 +206,7 @@ void fini_() {
     creep_stop();
     protoss_unload();
     unhook(logger_old); logger_old = NULL;
+    unhook(ttbr_old); ttbr_old = NULL;
     unhook(tracer_old); tracer_old = NULL; tracer_did_trace = false;
     unhook(vt_old); vt_old = NULL;
     unhook(vm_fault_enter_old); vm_fault_enter_old = NULL;
@@ -218,6 +234,7 @@ struct regs {
     uint32_t id_dfr0;
     uint32_t dbgdscr;
     uint32_t tpidrprw;
+    uint32_t dacr;
 };
 
 int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
@@ -243,6 +260,7 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         asm("mrc p15, 0, %0, c0, c1, 2" :"=r"(regs.id_dfr0));
         asm("mrc p14, 0, %0, c0, c1, 0" : "=r"(regs.dbgdscr));
         asm("mrc p15, 0, %0, c13, c0, 4" : "=r"(regs.tpidrprw));
+        asm("mrc p15, 0, %0, c3, c0, 0" : "=r"(regs.dacr));
         int error;
         if(error = copyout(&regs, (user_addr_t) uap->b, sizeof(regs))) return error;
         *retval = 0;
@@ -301,6 +319,12 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
     case 7: // hook a function, log args
         *retval = 0;
         if(!(logger_old = hook((void *) uap->b, logger_hook, uap->c))) {
+            *retval = -1;
+        }
+        break;
+    case 29:
+        *retval = 0;
+        if(!(ttbr_old = hook((void *) uap->b, ttbr_hook, uap->c))) {
             *retval = -1;
         }
         break;
@@ -375,6 +399,9 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         break;
     case 27:
         *retval = do_something();
+        break;
+    case 28:
+        *retval = (int32_t) get_proc_map((int) uap->b);
         break;
     default:
         IOLog("Unknown mode %d\n", uap->mode);

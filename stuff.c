@@ -26,6 +26,7 @@ struct regs {
     uint32_t id_dfr0;
     uint32_t dbgdscr;
     uint32_t tpidrprw;
+    uint32_t dacr;
 };
 
 int copy_phys(uint32_t paddr, uint32_t size, void *buf) {
@@ -264,6 +265,7 @@ int main(int argc, char **argv) {
         {"vm_fault_enter", required_argument, 0, 131},
         {"weird", required_argument, 0, 132},
         {"vt", required_argument, 0, 133},
+        {"ttbr", required_argument, 0, 140},
         {"read-debug-reg", required_argument, 0, 136},
         {"write-debug-reg", required_argument, 0, 137},
         {"do-something", no_argument, 0, 138},
@@ -271,14 +273,14 @@ int main(int argc, char **argv) {
         {0, 0, 0, 0}
     };
     int idx;
-    while((c = getopt_long(argc, argv, "r012sl:w:L:W:uh:H:v:w:c:CPUd:Dt:a:Ao:", options, &idx)) != -1) {
+    while((c = getopt_long(argc, argv, "r012sl:w:L:W:uh:H:v:w:c:CPUd:Dt:a:Ao:p:", options, &idx)) != -1) {
         did_something = true;
         switch(c) {
         case 'r':
             assert(!syscall(8, 0, &regs));
             printf("cpsr=%x ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x sctlr=%x scr=%x\n", regs.cpsr, regs.ttbr0, regs.ttbr1, regs.ttbcr, regs.contextidr, regs.sctlr, regs.scr);
             printf("dbgdidr=%x dbgdrar=%x dbgdsar=%x id_dfr0=%x dbgdscr=%x\n", regs.dbgdidr, regs.dbgdrar, regs.dbgdsar, regs.id_dfr0, regs.dbgdscr);
-            printf("tpidrprw=%x\n", regs.tpidrprw);
+            printf("tpidrprw=%x dacr=%x\n", regs.tpidrprw, regs.dacr);
             uint32_t thing1 = read32(regs.tpidrprw + 0x334);
             uint32_t thing2 = read32(thing1 + 0xfc);
             printf("thing1=%x thing2[*%x]=%x\n", thing1, thing1 + 0xfc, thing2);
@@ -295,6 +297,13 @@ int main(int argc, char **argv) {
             assert(!syscall(8, 0, &regs));
             dump_pagetable(regs.ttbr1 - 0x4000, 0, 0x4000);
             break;
+        case 'p': {
+            uint32_t pt = syscall(8, 28, atoi(optarg));
+            assert(pt);
+            printf("pt = %08x\n", pt);
+            dump_pagetable(pt, 0, 0x1000);
+            break;
+        }
         case 's':
             assert(!syscall(8, 5));
             break;
@@ -359,6 +368,9 @@ int main(int argc, char **argv) {
         case 133:
             assert(!syscall(8, 19, parse_hex(optarg)));
             break;
+        case 140:
+            assert(!syscall(8, 29, parse_hex(optarg)));
+            break;
         case 't':
             assert(!syscall(8, 20, parse_hex(optarg)));
             break;
@@ -407,6 +419,7 @@ usage:
            "    -0:                    dump memory map at ttbr0\n"
            "    -1:                    dump memory map at ttbr1\n"
            "    -2:                    dump memory map at ttbr1-0x4000\n"
+           "    -p pid:                dump memory map of process\n"
            "    -s:                    dump some info about IOSurfaces\n"
            "    -l addr:               do a read32\n"
            "    -w addr=value:         do a write32\n"
@@ -416,6 +429,7 @@ usage:
            "    -h addr:               hook for generic logging\n"
            "    -H addr:               forcibly hook for generic logging\n"
            "    --vt addr:             hook for generic logging + vtable\n"
+           "    --ttbr addr:           hook for generic logging + ttbrs\n"
            "    --vm_fault_enter addr: hook vm_fault_enter for logging\n"
            "    --weird addr:          hook weird for logging\n"
            "    -c addr+size:          hook range for creep\n"
