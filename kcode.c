@@ -30,7 +30,14 @@ struct mysyscall_args {
 static void *(*vt_old)(VOID_STAR_A1_THROUGH_7);
 static void *vt_hook(VOID_STAR_A1_THROUGH_7) {
     void *result = vt_old(A1_THROUGH_7);
-    IOLog("vt_hook: from:%p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p vt=%p result=%p\n", __builtin_return_address(0), __builtin_return_address(1), __builtin_return_address(2), A1_THROUGH_7, *((void **) a1), result);
+    IOLog("vt_hook: from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p vt=%p result=%p\n",
+        __builtin_return_address(0),
+        __builtin_return_address(1),
+        __builtin_return_address(2),
+        __builtin_return_address(3),
+        __builtin_return_address(4),
+        __builtin_return_address(5),
+        A1_THROUGH_7, *((void **) a1), result);
     return result;
 }
 
