@@ -53,7 +53,14 @@ static void *ttbr_hook(VOID_STAR_A1_THROUGH_7) {
 static void *(*logger_old)(VOID_STAR_A1_THROUGH_7);
 static void *logger_hook(VOID_STAR_A1_THROUGH_7) {
     void *result = logger_old(A1_THROUGH_7);
-    IOLog("logger_hook: from:%p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p\n", __builtin_return_address(0), __builtin_return_address(1), __builtin_return_address(2), A1_THROUGH_7, result);
+    IOLog("logger_hook: from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p\n",
+        __builtin_return_address(0),
+        __builtin_return_address(1),
+        __builtin_return_address(2),
+        __builtin_return_address(3),
+        __builtin_return_address(4),
+        __builtin_return_address(5),
+        A1_THROUGH_7, result);
     return result;
 }
 
