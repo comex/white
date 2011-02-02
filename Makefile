@@ -7,7 +7,7 @@ all: stuff white_loader kcode.dylib mem.dylib serialplease.dylib
 	$(GCC) $(CFLAGS) -c -o $@ $< -DIMG3_SUPPORT
 stuff: stuff.c
 	$(GCC) $(CFLAGS) -o stuff stuff.c
-KCODE_OBJS = kcode.o black.o creep.o creepasm.o protoss.o protossasm.o
+KCODE_OBJS = kcode.o black.o creep.o creepasm.o protoss.o protossasm.o failsafe.o
 kcode.dylib: $(KCODE_OBJS)
 	$(GCC) $(CFLAGS) -dynamiclib -o kcode.dylib $(KCODE_OBJS) -nostdlib -nodefaultlibs -lgcc -undefined dynamic_lookup -read_only_relocs suppress -segprot __TEXT rwx rwx 
 mem.dylib: mem.c

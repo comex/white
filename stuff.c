@@ -228,11 +228,10 @@ static void dump_watch() {
 
 static void get_object_info(uint32_t object) {
     char buf[128];
-    int ret = syscall(8, 25, object, buf, sizeof(buf));
-    assert(ret >= 0);
-    write(1, buf, ret);
+    assert(!syscall(8, 25, object, buf, sizeof(buf)));
+    printf("%s ", buf);
     int retain_count = syscall(8, 26, object);
-    printf(" retain=%d\n", retain_count);
+    printf("retain=%d\n", retain_count);
 }
 
 uint32_t parse_hex(const char *optarg) {

@@ -14,6 +14,8 @@ void protoss_stop();
 void protoss_unload();
 uint32_t protoss_dump_debug_reg(uint32_t reg);
 int protoss_write_debug_reg(uint32_t reg, uint32_t val);
+// failsafe.S
+int run_failsafe(void *result, void *func, uint32_t arg1, uint32_t arg2);
 
 struct mysyscall_args {
     uint32_t mode;
@@ -198,8 +200,41 @@ uint32_t get_proc_map(int pid) {
     return p->task->map->pmap->phys;
 }
 
-static int do_something() {
-    return 0;    
+static void write32(volatile uint32_t *addr, uint32_t val) {
+    *addr = val;
+}
+
+static uint32_t read32(volatile uint32_t *addr) {
+    return *addr;
+}
+
+static int poke32(bool write, bool phys, uint32_t addr, uint32_t val) {
+    void *descriptor, *map;
+    int retval;
+    if(phys) {
+        descriptor = IOMemoryDescriptor_withPhysicalAddress(addr, 4, write ? kIODirectionOut : kIODirectionIn);
+        map = IOMemoryDescriptor_map(descriptor, 0);
+        addr = (uint32_t) IOMemoryMap_getAddress(map);
+    }
+    if(write) {
+        retval = run_failsafe(NULL, &write32, addr, val);
+    } else {
+        int r;
+        if(r = run_failsafe(&retval, &read32, addr, 0)) retval = r;
+    }
+    if(phys) {
+        delete_object(map);
+        delete_object(descriptor);
+    }
+    return retval;
+}
+
+int do_something() {
+    int x;
+    protoss_go();
+    int result = copyout(&x, (user_addr_t) 0x42, 4);
+    protoss_stop();
+    return result;
 }
 
 // from the loader
@@ -211,8 +246,7 @@ __attribute__((constructor))
 void init() {
     IOLog("init %p\n", mysyscall);
     saved_sysent = sysent[8];
-    sysent[8] = (struct sysent){ 1, 0, 0, (void *) mysyscall, NULL, NULL, _SYSCALL_RET_INT_T, 5 * sizeof(uint32_t) };
-    
+    sysent[8] = (struct sysent){ 1, 0, 0, (void *) mysyscall, NULL, NULL, _SYSCALL_RET_INT_T, sizeof(struct mysyscall_args) };
 }
 
 void fini_() {
@@ -298,26 +332,7 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
     case 3: // read32 (possibly physical)
     case 16: // write32 (possibly physical)
     {
-        bool phys = (uap->mode == 16) ? uap->d : uap->c;
-        volatile uint32_t *data;
-        void *descriptor, *map;
-        if(phys) {
-            descriptor = IOMemoryDescriptor_withPhysicalAddress(uap->b, 4, uap->mode == 16 ? kIODirectionOut : kIODirectionIn);
-            map = IOMemoryDescriptor_map(descriptor, 0);
-            data = IOMemoryMap_getAddress(map);
-        } else {
-            data = (void *) uap->b;
-        }
-        if(uap->mode == 16) {
-            *data = uap->c;
-            *retval = 0;
-        } else {
-            *retval = *data;
-        }
-        if(phys) {
-            delete_object(map);
-            delete_object(descriptor);
-        }
+        *retval = poke32(uap->mode == 16, (uap->mode == 16) ? uap->d : uap->c, uap->b, uap->c); 
         break;
     }
     case 4: // crash
@@ -402,10 +417,14 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         *retval = protoss_write_debug_reg(uap->b, uap->c);
         break;
     case 25: {
-        const char *name = OSMetaClass_getClassName(get_metaclass((void *) uap->b));
-        size_t done;
-        int result = copyoutstr(name, uap->c, uap->d, &done);
-        *retval = result ? result : done;
+        void *metaclass;
+        if(run_failsafe(&metaclass, &get_metaclass, uap->b, 0)) {
+            *retval = 5;
+        } else {
+            const char *name = OSMetaClass_getClassName(metaclass);
+            size_t done;
+            *retval = copyoutstr(name, uap->c, uap->d, &done);
+        }
         break;
     }
     case 26:
