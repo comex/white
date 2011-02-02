@@ -50,6 +50,10 @@ loop:
     bne loop
 
     # found it
+    # don't leave it sitting in the stack, though
+    mov r1, #0
+    str r1, [sp, #-4]
+    
     pop {r1, r2, r4-r8, r10, r11, lr}
     str r1, [r2]
 
