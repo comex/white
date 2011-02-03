@@ -200,28 +200,21 @@ uint32_t get_proc_map(int pid) {
     return p->task->map->pmap->phys;
 }
 
-static void write32(volatile uint32_t *addr, uint32_t val) {
-    *addr = val;
-}
-
-static uint32_t read32(volatile uint32_t *addr) {
-    return *addr;
-}
-
-static int poke32(bool write, bool phys, uint32_t addr, uint32_t val) {
+static int poke_mem(void *kaddr, uint32_t uaddr, uint32_t size, bool write, bool phys) {
     void *descriptor, *map;
     int retval;
     if(phys) {
-        descriptor = IOMemoryDescriptor_withPhysicalAddress(addr, 4, write ? kIODirectionOut : kIODirectionIn);
+        descriptor = IOMemoryDescriptor_withPhysicalAddress((uint32_t) kaddr, 4, write ? kIODirectionOut : kIODirectionIn);
         map = IOMemoryDescriptor_map(descriptor, 0);
-        addr = (uint32_t) IOMemoryMap_getAddress(map);
+        kaddr = IOMemoryMap_getAddress(map);
     }
+
     if(write) {
-        retval = run_failsafe(NULL, &write32, addr, val);
+        retval = copyin(uaddr, kaddr, size);
     } else {
-        int r;
-        if(r = run_failsafe(&retval, &read32, addr, 0)) retval = r;
+        retval = copyout(kaddr, uaddr, size);
     }
+
     if(phys) {
         delete_object(map);
         delete_object(descriptor);
@@ -314,27 +307,9 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         *retval = 0;
         break;
     }
-    case 1: { // copy physical data
-        void *descriptor = IOMemoryDescriptor_withPhysicalAddress(uap->b, uap->c, kIODirectionIn);
-        void *map = IOMemoryDescriptor_map(descriptor, 0);
-        unsigned int *data = IOMemoryMap_getAddress(map);
-        //IOLog("data = %x\n", data); break;
-        
-        *retval = copyout(data, (user_addr_t) uap->d, uap->c);
-        
-        delete_object(map);
-        delete_object(descriptor);
+    case 1: // copy data
+        *retval = poke_mem((void *) uap->b, uap->c, uap->d, uap->e, uap->f);
         break;
-    }
-    case 2: // more realistic read
-        *retval = copyout((void *) uap->b, (user_addr_t) uap->d, uap->c);
-        break;
-    case 3: // read32 (possibly physical)
-    case 16: // write32 (possibly physical)
-    {
-        *retval = poke32(uap->mode == 16, (uap->mode == 16) ? uap->d : uap->c, uap->b, uap->c); 
-        break;
-    }
     case 4: // crash
         ((void (*)()) 0xdeadbeef)();
         *retval = 0;

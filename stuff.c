@@ -29,16 +29,14 @@ struct regs {
     uint32_t dacr;
 };
 
-int copy_phys(uint32_t paddr, uint32_t size, void *buf) {
-    return syscall(8, 1, paddr, size, buf);
+int poke_mem(uint32_t kaddr, void *uaddr, uint32_t size, bool write, bool phys) {
+    return syscall(8, 1, kaddr, uaddr, size, write, phys);
 }
 
-int kread(uint32_t addr, uint32_t size, void *buf) {
-    return syscall(8, 2, addr, size, buf);
-}
-
-uint32_t read32(uint32_t addr) {
-    return syscall(8, 3, addr, false);
+static uint32_t read32(uint32_t kaddr) {
+    uint32_t result;
+    assert(!poke_mem(kaddr, &result, sizeof(result), false, false));
+    return result;
 }
 
 static const char *cacheable(uint32_t flags) {
@@ -94,7 +92,7 @@ static const char *ap(uint32_t ap) {
 
 static void dump_pagetable(uint32_t ttbr, uint32_t baseaddr, uint32_t size) {
     unsigned int *data = malloc(size);
-    assert(!copy_phys(ttbr & ~0x3f, size, data));
+    assert(!poke_mem(ttbr & ~0x3f, data, size, false, true));
     for(int i = 0; i < (size / 4); i++) {
         unsigned int l1desc = data[i];
         if((l1desc & 3) == 0) continue; // fault
@@ -104,7 +102,7 @@ static void dump_pagetable(uint32_t ttbr, uint32_t baseaddr, uint32_t size) {
             printf("page table base=%x P=%d domain=%d\n", l1desc & ~0x3ff, (l1desc & (1 << 9)) & 1, (l1desc >> 5) & 0xf);
             unsigned int data2[256];
             memset(data2, 0xff, sizeof(data2));
-            assert(!copy_phys(l1desc & ~0x3ff, sizeof(data2), data2));
+            assert(!poke_mem(l1desc & ~0x3ff, &data2, sizeof(data2), false, true));
             for(int j = 0; j < 256; j++) {
                 unsigned int l2desc = data2[j];
                 if((l2desc & 3) == 0) continue; // fault
@@ -307,14 +305,19 @@ int main(int argc, char **argv) {
             assert(!syscall(8, 5));
             break;
         case 'l':
-        case 'L':
-            printf("%08x\n", syscall(8, 3, parse_hex(optarg), c == 'L'));
+        case 'L': {
+            uint32_t result;
+            assert(!poke_mem(parse_hex(optarg), &result, sizeof(result), false, c == 'L'));
+            printf("%08x\n", result);
             break;
+        }
         case 'w':
         case 'W': {
             char *a = strsep(&optarg, "=");
             assert(a && optarg);
-            assert(!syscall(8, 16, parse_hex(a), parse_hex(optarg), c == 'W'));
+            
+            uint32_t val = parse_hex(optarg);
+            assert(!poke_mem(parse_hex(a), &val, sizeof(val), true, c == 'L'));
             break;
         }
         case 'u':

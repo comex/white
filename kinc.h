@@ -57,6 +57,8 @@ LC int vm_protect(vm_map_t map, vm_offset_t start, vm_size_t size, boolean_t set
 
 LC int copyout(const void *kernel_addr, user_addr_t user_addr, vm_size_t nbytes);
 
+LC int copyin(const user_addr_t uaddr, void *kaddr, size_t len);
+
 LC int copyinstr(const user_addr_t uaddr, void *kaddr, size_t len, size_t *done);
 
 LC int copyoutstr(const void *kaddr, user_addr_t uaddr, size_t len, size_t *done);
