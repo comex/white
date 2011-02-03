@@ -125,7 +125,9 @@ LC void *OSMetaClass_getClassName(void *metaclass)
 asm("__ZNK11OSMetaClass12getClassNameEv");
 
 static inline void *get_metaclass(void *object) {
-    return ((void *(***)(void *)) object)[0][0x1c/4](object);
+    void *(*ptr)(void *) = ((void ***) object)[0][0x1c/4];
+    *((volatile uint32_t *) ptr);
+    return ptr(object);
 }
 
 LC int OSObject_getRetainCount(void *object)

@@ -223,11 +223,7 @@ static int poke_mem(void *kaddr, uint32_t uaddr, uint32_t size, bool write, bool
 }
 
 int do_something() {
-    int x;
-    protoss_go();
-    int result = copyout(&x, (user_addr_t) 0x42, 4);
-    protoss_stop();
-    return result;
+    return run_failsafe(NULL, NULL, 0, 0);
 }
 
 // from the loader
