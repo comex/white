@@ -1,5 +1,5 @@
 GCC ?= /Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/gcc-4.2 -arch armv7 -isysroot /Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS4.2.sdk/ -mapcs-frame -fomit-frame-pointer -mthumb 
-CFLAGS += -g3 -std=gnu99 -Os -I. -fno-builtin-printf -fno-builtin-memset -fno-builtin-memcpy
+CFLAGS += -g3 -std=gnu99 -Os -I. -fno-builtin-printf -fno-builtin-memset -fno-builtin-memcpy -Wall -Wno-parentheses -Wno-pointer-to-int-cast
 all: stuff white_loader kcode.dylib mem.dylib serialplease.dylib
 %.o: %.c kinc.h
 	$(GCC) $(CFLAGS) -c -o $@ $< -DIMG3_SUPPORT -Wreturn-type
@@ -14,6 +14,9 @@ mem.dylib: mem.c
 	$(GCC) $(CFLAGS) -dynamiclib -o mem.dylib mem.c -fwhole-program -combine -nostdinc -nodefaultlibs -lgcc -Wimplicit -Ixnu -Ixnu/bsd -Ixnu/libkern -Ixnu/osfmk -Ixnu/bsd/i386 -Ixnu/bsd/sys -Ixnu/EXTERNAL_HEADERS -Ixnu/osfmk/libsa -D__i386__ -DKERNEL -DKERNEL_PRIVATE -DBSD_KERNEL_PRIVATE -D__APPLE_API_PRIVATE -DXNU_KERNEL_PRIVATE -flat_namespace -undefined dynamic_lookup
 serialplease.dylib: serialplease.o
 	$(GCC) $(CFLAGS) -dynamiclib -o serialplease.dylib serialplease.o -nostdlib -nodefaultlibs -lgcc -undefined dynamic_lookup 
+
+milk.dylib: milk.o
+	$(GCC) $(CFLAGS) -dynamiclib -o milk.dylib milk.o -nostdlib -nodefaultlibs -lgcc -undefined dynamic_lookup -read_only_relocs suppress -fblocks
 
 chain: chain-kern.dylib chain-user
 chain-kern.dylib: chain-kern.c kinc.h

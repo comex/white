@@ -2,8 +2,13 @@
 #include <stdbool.h>
 #define LC __attribute__((long_call))
 
-typedef uint32_t user_addr_t, vm_size_t, vm_address_t, boolean_t, size_t, vm_offset_t, vm_prot_t;
-typedef int32_t pid_t;
+typedef uint32_t user_addr_t;
+typedef uint32_t vm_size_t, vm_address_t, boolean_t, size_t, vm_offset_t, vm_prot_t, vm_map_size_t;
+typedef int32_t pid_t, kern_return_t;
+
+typedef struct ipc_port *mach_port_t;
+
+struct timespec;
 
 typedef struct pmap {
     void *virt;
@@ -14,16 +19,23 @@ typedef struct pmap {
 typedef struct _vm_map {
     char whatever[0x24];
     pmap_t pmap;
+    vm_map_size_t size;
+    vm_map_size_t user_wire_limit;
+    vm_map_size_t user_wire_size;
+    int ref_count;
+    int res_count;
 } *vm_map_t;
 
-struct proc {
+typedef struct proc {
     void *prev;
     void *next;
     pid_t p_pid;
     struct task *task;
-};
+} *proc_t;
 
 typedef uint32_t lck_mtx_t[3];
+
+typedef struct _lck_grp_ lck_grp_t;
 
 struct task {
     // lock
@@ -46,12 +58,11 @@ LC void invalidate_icache(vm_offset_t addr, unsigned cnt, bool phys);
 LC void flush_dcache(vm_offset_t addr, unsigned cnt, bool phys);
 
 LC void *IOMalloc(size_t size);
-LC void *IOFree(void *p);
+LC void IOFree(void *p);
 
 LC int vm_allocate(vm_map_t map, vm_offset_t *addr, vm_size_t size, int flags);
 
 LC int vm_deallocate(register vm_map_t map, vm_offset_t start, vm_size_t size);
-
 
 LC int vm_protect(vm_map_t map, vm_offset_t start, vm_size_t size, boolean_t set_maximum, vm_prot_t new_protection);
 
@@ -63,6 +74,33 @@ LC int copyinstr(const user_addr_t uaddr, void *kaddr, size_t len, size_t *done)
 
 LC int copyoutstr(const void *kaddr, user_addr_t uaddr, size_t len, size_t *done);
 
+LC vm_map_t vm_map_switch(vm_map_t map)
+asm("$t_f0_b5_03_af_05_46_1d_ee_90_4f_d4_f8");
+
+LC void vm_map_deallocate(vm_map_t map);
+
+// locks
+
+LC lck_grp_t *lck_grp_alloc_init(const char *grp_name, void *attr);
+
+LC void lck_grp_free(lck_grp_t *grp);
+
+LC lck_mtx_t *lck_mtx_alloc_init(lck_grp_t *grp, void *attr);
+
+LC void lck_mtx_lock(lck_mtx_t *lck);
+
+LC void lck_mtx_unlock(lck_mtx_t *lck);
+
+LC void lck_mtx_free(lck_mtx_t *lck, lck_grp_t *grp);
+
+LC int sleep(void *chan, int pri);
+
+LC int msleep(void *chan, lck_mtx_t *mtx, int pri, const char *wmsg, struct timespec *ts);
+
+LC void wakeup(void *chan);
+
+//
+
 LC void IOLog(const char *msg, ...) __attribute__((format (printf, 1, 2)));
 
 LC void IOSleep(unsigned int milliseconds);
@@ -71,11 +109,20 @@ LC int ml_set_interrupts_enabled(int enabled);
 
 LC struct proc *proc_find(int pid);
 
+LC int proc_pid(struct proc *proc);
+
+LC struct proc *current_proc();
+
+LC void panic(const char *string, ...);
+
 static inline void flush_cache(void *addr, unsigned cnt) {
     flush_dcache((vm_offset_t) addr, cnt, false);
     invalidate_icache((vm_offset_t) addr, cnt, false);
 }
 
+typedef	void (*thread_continue_t)(void *param, int wait_result);
+
+LC kern_return_t kernel_thread_start(thread_continue_t continuation, void *parameter, mach_port_t *new_thread);
 
 typedef enum IODirection { 
     kIODirectionNone = 0, 

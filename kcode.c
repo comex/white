@@ -55,14 +55,15 @@ static void *ttbr_hook(VOID_STAR_A1_THROUGH_7) {
 static void *(*logger_old)(VOID_STAR_A1_THROUGH_7);
 static void *logger_hook(VOID_STAR_A1_THROUGH_7) {
     void *result = logger_old(A1_THROUGH_7);
-    IOLog("logger_hook: from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p\n",
+    IOLog("logger_hook: from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p pid=%d\n",
         __builtin_return_address(0),
         __builtin_return_address(1),
         __builtin_return_address(2),
         __builtin_return_address(3),
         __builtin_return_address(4),
         __builtin_return_address(5),
-        A1_THROUGH_7, result);
+        A1_THROUGH_7, result,
+        proc_pid(current_proc()));
     return result;
 }
 
@@ -201,7 +202,7 @@ uint32_t get_proc_map(int pid) {
 }
 
 static int poke_mem(void *kaddr, uint32_t uaddr, uint32_t size, bool write, bool phys) {
-    void *descriptor, *map;
+    void *descriptor = 0, *map = 0;
     int retval;
     if(phys) {
         descriptor = IOMemoryDescriptor_withPhysicalAddress((uint32_t) kaddr, 4, write ? kIODirectionOut : kIODirectionIn);
