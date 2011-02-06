@@ -10,20 +10,15 @@
 
 #define _SYSCALL_RET_NONE 0
 
-extern struct sysent sysent[];
-
-extern proc_t kernproc;
-
 int _NSConcreteGlobalBlock;
 
-#define _assert(x) do { if(!(x)) panic("_assert failure: %s", #x); } while(0)
-#define _assert_zero(x) do { int _val; if(_val = (int) (x)) panic("_assert_zero failure: %s was %d", #x, _val); } while(0)
+#define _assert(x) do { if(!(x)) panic("_assert failure: %s (errno=%d)", #x, errno); } while(0)
 
 void run_in_milk_thread(void (^action)());
 
+extern struct sysent sysent[];
+int errno = 0;
 int syscall(int num, uint32_t *uap) {
-    vm_map_t old_map = vm_map_switch(kernel_map);
-    
     /*
     for(int i = 0; i < 6; i++) {
         IOLog("syscall: uap[%d] = %x\n", i, uap[i]);
@@ -31,14 +26,15 @@ int syscall(int num, uint32_t *uap) {
     IOLog("syscall: sy_call = %p\n", sysent[num].sy_call);
     */
 
+    errno = 0;
     int result, result2 = 0;
-    result = sysent[num].sy_call(current_proc(), (void *) uap, &errno);
-    /*
-    IOLog("syscall: result=%d result2=%d\n", result, result2);
-    */
-    vm_map_switch(old_map);
-
-    return result;
+    result = sysent[num].sy_call(current_proc(), (void *) uap, &result2);
+    if(result == 0) {
+        return result2;
+    } else {
+        errno = result;
+        return -1;
+    }
 }
 
 #define syscall1(num, a) syscall(num, (uint32_t[]) { (uint32_t) (a) })
@@ -65,9 +61,9 @@ void loopback_setup_ipv4() {
     s = socket(AF_INET, SOCK_DGRAM, 0);
     _assert(s != -1);
 
-    _assert_zero(ioctl(s, SIOCGIFFLAGS, &ifr));
+    _assert(!ioctl(s, SIOCGIFFLAGS, &ifr));
     ifr.ifr_flags |= IFF_UP;
-    _assert_zero(ioctl(s, SIOCSIFFLAGS, &ifr));
+    _assert(!ioctl(s, SIOCSIFFLAGS, &ifr));
 
     memset(&ifra, 0, sizeof(ifra));
     memcpy(ifra.ifra_name, "lo0", 4);
@@ -78,9 +74,13 @@ void loopback_setup_ipv4() {
     ((struct sockaddr_in *)&ifra.ifra_mask)->sin_addr.s_addr = htonl(IN_CLASSA_NET);
     ((struct sockaddr_in *)&ifra.ifra_mask)->sin_len = sizeof(struct sockaddr_in);
 
-    _assert_zero(ioctl(s, SIOCAIFADDR, &ifra));
+    _assert(!ioctl(s, SIOCAIFADDR, &ifra));
 
-    _assert_zero(close(s));
+    _assert(!close(s));
+}
+
+void userclient_stuff() {
+
 }
 
 
@@ -98,7 +98,6 @@ void milk_thread_routine(void *a, int b) {
 
     while(1) {
         struct milk_thread_pending *p = pending;
-        IOLog("msleep awake %p\n", p);
         if(p) {
             void (^action)() = p->action;
             if(action) {
@@ -112,7 +111,6 @@ void milk_thread_routine(void *a, int b) {
                 break;
             }
         }
-        IOLog("msleep time\n");
         msleep(&milk_lck, milk_lck, 0, "milk thread", NULL);
     }
 
@@ -129,11 +127,8 @@ void run_in_milk_thread(void (^action)()) {
     new->next = pending;
     pending = new;
     wakeup(&milk_lck);
-    IOLog("woke him up, unlocking milk_lck\n");
+    msleep(&channel, milk_lck, 0, "milk waiter", NULL);
     lck_mtx_unlock(milk_lck);
-    IOLog("okay, about to msleep myself\n");
-    msleep(&channel, NULL, 0, "milk waiter", NULL);
-    IOLog("done msleeping\n");
 }
 
 __attribute__((constructor))
@@ -142,11 +137,11 @@ void init() {
     milk_lck = lck_mtx_alloc_init(milk_lck_grp, NULL);
 
     mach_port_t thread; 
-    _assert_zero(kernel_thread_start(&milk_thread_routine, NULL, &thread));
+    _assert(!kernel_thread_start(&milk_thread_routine, NULL, &thread));
 
-    IOLog("about to run it\n");
     run_in_milk_thread(^{
-        IOLog("Hello, current_proc = %p\n", current_proc());
+        extern proc_t kernproc;
+        IOLog("Hello, current_proc = %p kernproc=%p\n", current_proc(), kernproc);
         loopback_setup_ipv4();
     });
 }

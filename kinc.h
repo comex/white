@@ -2,6 +2,15 @@
 #include <stdbool.h>
 #define LC __attribute__((long_call))
 
+#define METACALL(typ, method_name, object, args...) METACALL2(__LINE__, typ, method_name, object, ##args)
+#define METACALL2(line, typ, method_name, object, args...) METACALL3(line, typ, method_name, object, ##args)
+#define METACALL3(line, typ, method_name, object, args...) ({ \
+    extern uint32_t vt_offset_##line asm("$vt_" method_name); \
+    void *_o = (object); \
+    ((typ (***)(void *, ...)) _o)[0][vt_offset_##line/4](_o, ##args); \
+})
+// the above is based on some magic in link.c
+
 typedef uint32_t user_addr_t;
 typedef uint32_t vm_size_t, vm_address_t, boolean_t, size_t, vm_offset_t, vm_prot_t, vm_map_size_t;
 typedef int32_t pid_t, kern_return_t;
@@ -37,14 +46,14 @@ typedef uint32_t lck_mtx_t[3];
 
 typedef struct _lck_grp_ lck_grp_t;
 
-struct task {
+typedef struct task {
     // lock
     lck_mtx_t lock;
     uint32_t ref_count;
     boolean_t active;
     boolean_t halting;
     vm_map_t map;
-};
+} *task_t;
 
 extern vm_map_t kernel_map;
 extern uint32_t *kernel_pmap;
@@ -153,7 +162,7 @@ LC void *IOService_getMatchingServices(void *matching)
 asm("__ZN9IOService19getMatchingServicesEP12OSDictionary");
 
 static inline void *OSIterator_getNextObject(void *iterator) {
-    return ((void *(***)(void *)) iterator)[0][21](iterator);
+    return METACALL(void *, "__ZN18IORegistryIterator13getNextObjectEv", iterator);
 }
 
 LC void *IORegistryEntry_fromPath(const char *name, void *plane, char *residualPath, int *residualLength, void *fromEntry)
@@ -172,26 +181,57 @@ LC void *OSMetaClass_getClassName(void *metaclass)
 asm("__ZNK11OSMetaClass12getClassNameEv");
 
 static inline void *get_metaclass(void *object) {
-    void *(*ptr)(void *) = ((void ***) object)[0][0x1c/4];
-    *((volatile uint32_t *) ptr);
-    return ptr(object);
+    return METACALL(void *, "__ZNK11OSMetaClass12getMetaClassEv", object);
 }
 
 LC int OSObject_getRetainCount(void *object)
 asm("__ZNK8OSObject14getRetainCountEv");
 
-static inline void delete_object(void *object) {
-    ((void (***)(void *)) object)[0][1](object);
-}
-
 static inline void release_object(void *object) {
-    ((void (***)(void *)) object)[0][2](object);
+    return METACALL(void, "__ZNK8OSObject7releaseEi", object);
 }
 
 static inline void *retain_object(void *object) {
-    ((void (***)(void *)) object)[0][4](object);
-    return object;
+    return METACALL(void *, "__ZNK11OSMetaClass6retainEv", object);
 }
+
+struct IOExternalMethodArguments {
+    uint32_t version;
+    uint32_t selector;
+
+    mach_port_t asyncWakePort;
+    void *asyncReference;
+    uint32_t asyncReferenceCount;
+   
+    const uint64_t *scalarInput;
+    uint32_t scalarInputCount;
+   
+    const void *structureInput;
+    uint32_t structureInputSize;
+   
+    void *structureInputDescriptor;
+   
+    uint64_t *scalarOutput;
+    uint32_t scalarOutputCount;
+   
+    void *structureOutput;
+    uint32_t structureOutputSize;
+   
+    void *structureOutputDescriptor;
+    uint32_t structureOutputDescriptorSize;
+   
+    uint32_t __reserved[32];
+};
+
+
+static inline int IOService_newUserClient(void *service, task_t owningTask, void *securityID, uint32_t type, void *properties, void **client) {
+    return METACALL(int, "__ZN9IOService13newUserClientEP4taskPvmP12OSDictionaryPP12IOUserClient", service, owningTask, securityID, type, properties, client);
+}
+
+static inline int IOUserClient_externalMethod(void *client, uint32_t selector, struct IOExternalMethodArguments *arguments) {
+    return METACALL(int, "__ZN12IOUserClient14externalMethodEjP25IOExternalMethodArgumentsP24IOExternalMethodDispatchP8OSObjectPv", client, selector, arguments, 0, 0, 0);
+}
+
 
 // copied from xnu
 

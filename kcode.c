@@ -217,8 +217,8 @@ static int poke_mem(void *kaddr, uint32_t uaddr, uint32_t size, bool write, bool
     }
 
     if(phys) {
-        delete_object(map);
-        delete_object(descriptor);
+        release_object(map);
+        release_object(descriptor);
     }
     return retval;
 }
