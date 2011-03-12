@@ -141,8 +141,6 @@ mmrw(dev, uio, rw)
 	int error = 0;
 	vm_offset_t	where;
 
-    int aa = ((int *) uio)[0x18/4];
-
 	while (uio_resid(uio) > 0 && error == 0) {
 		uio_update(uio, 0);
 

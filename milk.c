@@ -6,13 +6,15 @@
 #include <sys/sockio.h>
 #include <netinet/in.h>
 
-//#define FOR_BOOT
+////#define FOR_BOOT
 
 #define _SYSCALL_RET_NONE 0
 
 int _NSConcreteGlobalBlock;
 
-#define _assert(x) do { if(!(x)) panic("_assert failure: %s (errno=%d)", #x, errno); } while(0)
+#define _assert(x) do { if(!(x)) panic("_assert failure line %d: %s (errno=%d)", __LINE__, #x, errno); } while(0)
+#define _assert_zero(x) do { int _val = (x); if(_val) panic("_assert failure line %d: %s was %x", __LINE__, #x, _val); } while(0)
+
 
 void run_in_milk_thread(void (^action)());
 
@@ -46,10 +48,9 @@ int syscall(int num, uint32_t *uap) {
 #define ioctl(args...) syscall3(54, args)
 #define write(a, b, c) ((ssize_t) syscall(
 
-static int io_sock;
-
-
 void loopback_setup_ipv4() {
+    IOLog("setting up ipv4\n");
+
     // borrowed from launchd
     struct ifaliasreq ifra;
     struct ifreq ifr;
@@ -78,8 +79,123 @@ void loopback_setup_ipv4() {
 
     _assert(!close(s));
 }
+extern int wtf asm("$vt___ZN9IOService13newUserClientEP4taskPvmP12OSDictionaryPP12IOUserClient");
 
 void userclient_stuff() {
+    IOLog("doing user client\n");
+
+    void *properties = OSUnserializeXML(
+        "<dict>\n"
+        "    <key>USBDeviceCommand</key>\n"
+        "    <string>SetDeviceDescription</string>\n"
+        "    <key>USBDeviceCommandParameter</key>\n"
+        "    <dict>\n"
+        "            <key>ConfigurationDescriptors</key>\n"
+        "            <array>\n"
+        "                <dict>\n"
+        "                    <key>Description</key>\n"
+        "                    <string>PTP</string>\n"
+        "                    <key>Interfaces</key>\n"
+        "                    <array>\n"
+        "                        <string>PTP</string>\n"
+        "                    </array>\n"
+        "                </dict>\n"
+        "                <dict>\n"
+        "                    <key>AccessoryResistorSwap</key>\n"
+        "                    <true/>\n"
+        "                    <key>Description</key>\n"
+        "                    <string>iPod USB Interface</string>\n"
+        "                    <key>Interfaces</key>\n"
+        "                    <array>\n"
+        "                        <string>USBAudioControl</string>\n"
+        "                        <string>USBAudioStreaming</string>\n"
+        "                        <string>IapOverUsbHid</string>\n"
+        "                    </array>\n"
+        "                </dict>\n"
+        "                <dict>\n"
+        "                    <key>DefaultConfiguration</key>\n"
+        "                    <true/>\n"
+        "                    <key>Description</key>\n"
+        "                    <string>PTP + Apple Mobile Device</string>\n"
+        "                    <key>Interfaces</key>\n"
+        "                    <array>\n"
+        "                        <string>PTP</string>\n"
+        "                        <string>AppleUSBMux</string>\n"
+        "                    </array>\n"
+        "                </dict>\n"
+        "            </array>\n"
+        "            <key>deviceID</key>\n"
+        "            <integer>1</integer>\n"
+        "            <key>manufacturerString</key>\n"
+        "            <string>Apple Inc.</string>\n"
+        "            <key>productID</key>\n"
+        "            <integer>4765</integer>\n"
+        "            <key>productString</key>\n"
+        "            <string>iProd</string>\n"
+        "            <key>vendorID</key>\n"
+        "            <integer>1452</integer>\n"
+        "    </dict>\n"
+        "</dict>\n"
+    , NULL);
+    _assert(properties);
+
+    void *interface_matching = OSUnserializeXML("<dict><key>IOProviderClass</key><string>IOUSBDeviceController</string></dict>", NULL);
+    _assert(interface_matching);
+
+    void *interface2_matching = OSUnserializeXML("<dict><key>IOProviderClass</key><string>IOUSBDeviceInterface</string><key>IOPropertyMatch</key><dict><key>USBDeviceFunction</key><string>PTP</string></dict></dict>", NULL);
+    _assert(interface2_matching);
+
+    void *interface = IOService_waitForMatchingService(interface_matching, (uint64_t) -1);
+    _assert(interface);
+
+    IOLog("setProperties = %x\n", IORegistryEntry_setProperties(interface, properties));
+    
+    void *interface2 = IOService_waitForMatchingService(interface2_matching, (uint64_t) -1);
+    _assert(interface2);
+
+    void *client;
+    _assert_zero(IOService_newUserClient(interface2, current_task(), current_task(), 0, NULL, &client));
+    
+    struct IOExternalMethodArguments args;
+    uint64_t input[2];
+    memset(&input, 0, sizeof(input));
+    memset(&args, 0, sizeof(args));
+    args.version = 1;
+    args.scalarInput = &input[0];
+
+    args.scalarInputCount = 1;
+    args.selector = 0;
+    IOLog("open = %x\n", IOUserClient_externalMethod(client, args.selector, &args));
+
+    args.scalarInputCount = 2;
+    args.selector = 3;
+    input[0] = 0xff;
+    _assert_zero(IOUserClient_externalMethod(client, args.selector, &args)); 
+
+    args.selector = 4;
+    input[0] = 0x50;
+    _assert_zero(IOUserClient_externalMethod(client, args.selector, &args)); 
+   
+    args.selector = 5;
+    input[0] = 0x34;
+    _assert_zero(IOUserClient_externalMethod(client, args.selector, &args)); 
+
+    args.selector = 11;
+    args.scalarInputCount = 0;
+    _assert_zero(IOUserClient_externalMethod(client, args.selector, &args)); 
+
+    IOUserClient_clientClose(client); // no assert
+
+    // scalar(0, [0], [])         _open
+    // scalar(3, [0xff, 0], [])   _setClassForAlternateSetting
+    // scalar(4, [0x50, 0], [])   _setSubClassForAlternateSetting
+    // scalar(5, [0x34, 0], [])   _setProtocolForAlternateSetting
+    // scalar(11, [], [])         _commitConfiguration
+
+    //OSObject_release(client);
+    OSObject_release(properties);
+    OSObject_release(interface_matching);
+    OSObject_release(interface2_matching);
 
 }
 
@@ -137,12 +253,13 @@ void init() {
     milk_lck = lck_mtx_alloc_init(milk_lck_grp, NULL);
 
     mach_port_t thread; 
-    _assert(!kernel_thread_start(&milk_thread_routine, NULL, &thread));
+    _assert_zero(kernel_thread_start(&milk_thread_routine, NULL, &thread));
 
     run_in_milk_thread(^{
         extern proc_t kernproc;
         IOLog("Hello, current_proc = %p kernproc=%p\n", current_proc(), kernproc);
         loopback_setup_ipv4();
+        userclient_stuff();
     });
 }
 

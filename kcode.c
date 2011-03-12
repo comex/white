@@ -26,12 +26,13 @@ struct mysyscall_args {
     uint32_t f;
 };
 
-#define VOID_STAR_A1_THROUGH_7 void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7
+#define VOID_STAR_A1_THROUGH_12 void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7, void *a8, void *a9, void *a10, void *a11, void *a12
 #define A1_THROUGH_7 a1, a2, a3, a4, a5, a6, a7
+#define A1_THROUGH_12 a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12
 
-static void *(*vt_old)(VOID_STAR_A1_THROUGH_7);
-static void *vt_hook(VOID_STAR_A1_THROUGH_7) {
-    void *result = vt_old(A1_THROUGH_7);
+static void *(*vt_old)(VOID_STAR_A1_THROUGH_12);
+static void *vt_hook(VOID_STAR_A1_THROUGH_12) {
+    void *result = vt_old(A1_THROUGH_12);
     IOLog("vt_hook: from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p vt=%p result=%p\n",
         __builtin_return_address(0),
         __builtin_return_address(1),
@@ -43,18 +44,18 @@ static void *vt_hook(VOID_STAR_A1_THROUGH_7) {
     return result;
 }
 
-static void *(*ttbr_old)(VOID_STAR_A1_THROUGH_7);
-static void *ttbr_hook(VOID_STAR_A1_THROUGH_7) {
+static void *(*ttbr_old)(VOID_STAR_A1_THROUGH_12);
+static void *ttbr_hook(VOID_STAR_A1_THROUGH_12) {
     uint32_t ttbr0, ttbr1;
     asm("mrc p15, 0, %0, c2, c0, 0" :"=r"(ttbr0));
     asm("mrc p15, 0, %0, c2, c0, 1" :"=r"(ttbr1));
     IOLog("ttbr_hook: from:%p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p ttbr0=%x ttbr1=%x\n", __builtin_return_address(0), __builtin_return_address(1), __builtin_return_address(2), A1_THROUGH_7, ttbr0, ttbr1);
-    return ttbr_old(A1_THROUGH_7);
+    return ttbr_old(A1_THROUGH_12);
 }
 
-static void *(*logger_old)(VOID_STAR_A1_THROUGH_7);
-static void *logger_hook(VOID_STAR_A1_THROUGH_7) {
-    void *result = logger_old(A1_THROUGH_7);
+static void *(*logger_old)(VOID_STAR_A1_THROUGH_12);
+static void *logger_hook(VOID_STAR_A1_THROUGH_12) {
+    void *result = logger_old(A1_THROUGH_12);
     IOLog("logger_hook: from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p pid=%d\n",
         __builtin_return_address(0),
         __builtin_return_address(1),
@@ -67,13 +68,13 @@ static void *logger_hook(VOID_STAR_A1_THROUGH_7) {
     return result;
 }
 
-static void *(*tracer_old)(VOID_STAR_A1_THROUGH_7);
+static void *(*tracer_old)(VOID_STAR_A1_THROUGH_12);
 static bool tracer_did_trace;
-static void *tracer_hook(VOID_STAR_A1_THROUGH_7) {
+static void *tracer_hook(VOID_STAR_A1_THROUGH_12) {
     bool should_trace = !tracer_did_trace;
     tracer_did_trace = true;
     if(should_trace) protoss_go();
-    void *result = tracer_old(A1_THROUGH_7);
+    void *result = tracer_old(A1_THROUGH_12);
     if(should_trace) protoss_stop();
     IOLog("tracer_hook: from:%p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p\n", __builtin_return_address(0), __builtin_return_address(1), __builtin_return_address(2), A1_THROUGH_7, result);
     return result;
@@ -98,36 +99,6 @@ int weird_hook(char *buf, int size) {
     }
     IOLog("=> %x\n", ret);
     return ret;
-}
-
-static int list_iosurfaces() {
-    void *reg_entry = IORegistryEntry_fromPath("IOService:/IOResources/IOCoreSurfaceRoot", NULL, NULL, NULL, NULL);
-    if(!reg_entry) {
-        IOLog("No reg_entry...\n");
-        return 1;
-    }
-    int highest_number = prop(reg_entry, 0x84, int);
-    void **root = prop(reg_entry, 0x80, void **);
-    IOLog("highest_number: %d\n", highest_number);
-    //IOLog("root: %p\n", root);
-    for(int i = 0; i < highest_number; i++) {
-        void *surface = root[i];
-        if(!surface) continue;
-        int its_id = prop(surface, 8, int);
-        char global = prop(surface, 0x15, char);
-        int owner = prop(surface, 0x44, int);
-        int width = prop(surface, 0x58, int);
-        int height = prop(surface, 0x5c, int);
-        int allocsize = prop(surface, 0x74, int);
-        void *vt = prop(surface, 0, void *);
-        
-        void *md = prop(surface, 0x24, void *);
-        void *phys = (md && prop(md, 0, unsigned int) == 0x802340e4) ? IOMemoryDescriptor_getPhysicalAddress(md) : NULL;
-        unsigned int vram = phys ? ((unsigned int) phys - 0x4fd00000) : (unsigned int) -1;
-
-        IOLog("%d: %p vt=%p id=%d global=%d owner=%x %dx%d allocsize=%d @vram=%u\n", i, surface, vt, its_id, (int) global, owner, width, height, allocsize, vram);
-    }
-    return 0;
 }
 
 static int do_something_usb_related() {
@@ -179,8 +150,8 @@ static int ioreg(uint32_t type, user_addr_t path) {
             IOLog("- %p\n", object);
         }
         IOLog("\n");
-        release_object(iterator);
-        release_object(matching);
+        OSObject_release(iterator);
+        OSObject_release(matching);
     }
     return (int) regentry;
 }
@@ -191,7 +162,7 @@ static uint32_t lookup_metaclass(user_addr_t name) {
     copyinstr(name, buf, sizeof(buf), &done);
     void *symbol = OSSymbol_withCString(buf);
     uint32_t result = (uint32_t) OSMetaClass_getMetaClassWithName(symbol);
-    release_object(symbol);
+    OSObject_release(symbol);
     return result;
 }
 
@@ -217,8 +188,8 @@ static int poke_mem(void *kaddr, uint32_t uaddr, uint32_t size, bool write, bool
     }
 
     if(phys) {
-        release_object(map);
-        release_object(descriptor);
+        OSObject_release(map);
+        OSObject_release(descriptor);
     }
     return retval;
 }
@@ -311,9 +282,6 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         ((void (*)()) 0xdeadbeef)();
         *retval = 0;
         break;
-    case 5: // list IOSurfaces
-        *retval = list_iosurfaces();
-        break;
     case 6: // unhook
         fini_();
         break;
@@ -390,7 +358,7 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         break;
     case 25: {
         void *metaclass;
-        if(run_failsafe(&metaclass, &get_metaclass, uap->b, 0)) {
+        if(run_failsafe(&metaclass, &OSObject_getMetaClass, uap->b, 0)) {
             *retval = 5;
         } else {
             const char *name = OSMetaClass_getClassName(metaclass);

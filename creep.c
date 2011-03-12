@@ -58,7 +58,6 @@ int creep_go(void *start, int size) {
 }
 
 void creep_get_records(user_addr_t buf, uint32_t bufsize) {
-    struct record *record = record_start;
     for(struct record *record = record_start; record; record = record->next) {
         size_t sz = 2 * sizeof(uint32_t);
         if(bufsize < sz) return;

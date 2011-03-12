@@ -1,4 +1,4 @@
-GCC ?= /Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/gcc-4.2 -arch armv7 -isysroot /Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS4.2.sdk/ -mapcs-frame -fomit-frame-pointer -mthumb 
+GCC ?= /Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/gcc-4.2 -arch armv7 -isysroot /Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS4.3.sdk/ -mapcs-frame -fomit-frame-pointer -mthumb 
 CFLAGS += -g3 -std=gnu99 -Os -I. -fno-builtin-printf -fno-builtin-memset -fno-builtin-memcpy -Wall -Wno-parentheses -Wno-pointer-to-int-cast
 all: stuff white_loader kcode.dylib mem.dylib serialplease.dylib
 %.o: %.c kinc.h
@@ -24,8 +24,10 @@ chain-kern.dylib: chain-kern.c kinc.h
 chain-user: chain-user.c
 	$(GCC) $(CFLAGS) -o chain-user chain-user.c
 
-white_loader: white_loader.o data/libdata.a
+data/libdata.a: data/*.c data/*.h
 	make -C data GCC="$(GCC)"
+
+white_loader: white_loader.o data/libdata.a
 	$(GCC) $(CFLAGS) -o $@ white_loader.o -Ldata -ldata
 ifneq ($(shell which lipo),)
 	bash -c 'if [ -n "`lipo -info $@ | grep arm`" ]; then ldid -Sent.plist $@; fi'

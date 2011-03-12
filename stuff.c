@@ -12,6 +12,8 @@
 #include <getopt.h>
 #include <mach/mach_time.h>
 
+#define prop(a, off, typ) *((typ *)(((char *) (a))+(off)))
+
 struct regs {
     uint32_t cpsr;
     uint32_t ttbr0;
@@ -232,6 +234,44 @@ static void get_object_info(uint32_t object) {
     printf("retain=%d\n", retain_count);
 }
 
+static void list_iosurfaces() {
+    char buf[0x100][0x100];
+    uint32_t root = syscall(8, 13, 128, "IOService:/IOResources/IOCoreSurfaceRoot");
+    assert(root);
+    struct {
+        uint32_t bufs;
+        uint32_t count;
+    } s;
+    assert(!poke_mem(root + 0x80, &s, sizeof(s), false, false));
+    for(uint32_t i = 0; i < s.count; i++) {
+        uint32_t surface;
+        char buf[0x100];
+        assert(!poke_mem(s.bufs + 4*i, &surface, sizeof(surface), false, false));
+        if(!surface) continue;
+        assert(!poke_mem(surface, buf, sizeof(buf), false, false));
+
+        printf("surface %u:\n", surface);
+        printf("  global: %s\n", prop(buf, 0x15, bool) ? "YES" : "NO");
+        printf("  use count: %d\n", prop(buf, 0x1c, int));
+        printf("  address: %x\n", prop(buf, 0x34, unsigned int));
+        printf("  size: %dx%d\n", prop(buf, 0x58, int), prop(buf, 0x5c, int));
+        printf("  bytes per row: %d\n", prop(buf, 0x60, int));
+        printf("  bytes per element: %d\n", prop(buf, 0x64, int));
+        printf("  element size: %dx%d\n", (int) prop(buf, 0x66, unsigned char), (int) prop(buf, 0x67, unsigned char));
+        printf("  offset: %d\n", prop(buf, 0x68, int));
+        printf("  pixel format: %x\n", prop(buf, 0x6c, unsigned int));
+        printf("  alloc size: %d\n", prop(buf, 0x74, int));
+        printf("  number of planes: %d\n", prop(buf, 0x78, int));
+        printf("  ycbcr matrix: %x\n", prop(buf, 0x7c, unsigned int));
+        printf("  cache mode: %x\n", prop(buf, 0x80, unsigned int));
+        printf("  planes: %x\n", prop(buf, 0x8c, unsigned int));
+        printf("  memory region?: %x, %x\n", prop(buf, 0x90, unsigned int), prop(buf, 0x94, unsigned int));
+        printf("  a0: %x\n", prop(buf, 0xa0, unsigned int));
+        printf("  a0 count: %x\n", prop(buf, 0xa4, unsigned int));
+        printf("\n");
+    }
+}
+
 uint32_t parse_hex(const char *optarg) {
     errno = 0;
     char *end;
@@ -302,7 +342,7 @@ int main(int argc, char **argv) {
             break;
         }
         case 's':
-            assert(!syscall(8, 5));
+            list_iosurfaces();
             break;
         case 'l':
         case 'L': {

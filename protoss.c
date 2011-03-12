@@ -339,7 +339,6 @@ void protoss_stop() {
         begin_debug(); // interrupts disabled
         read_debug(197);
         uint32_t dbgdscr = read_debug(34);
-        uint32_t old_dbgdscr = dbgdscr;
         dbgdscr |= 0x8000; // turn on debug
         write_debug(34, dbgdscr);
         for(int i = 0; i < 16; i++) {
