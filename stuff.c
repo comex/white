@@ -235,7 +235,6 @@ static void get_object_info(uint32_t object) {
 }
 
 static void list_iosurfaces() {
-    char buf[0x100][0x100];
     uint32_t root = syscall(8, 13, 128, "IOService:/IOResources/IOCoreSurfaceRoot");
     assert(root);
     struct {
@@ -249,17 +248,24 @@ static void list_iosurfaces() {
         assert(!poke_mem(s.bufs + 4*i, &surface, sizeof(surface), false, false));
         if(!surface) continue;
         assert(!poke_mem(surface, buf, sizeof(buf), false, false));
+        uint32_t mysterious_88 = prop(buf, 0x88, uint32_t);
+        uint32_t task = prop(buf, 0x44, uint32_t);
 
-        printf("surface %u:\n", surface);
+        printf("surface %u @ %x:\n", i, surface);
         printf("  global: %s\n", prop(buf, 0x15, bool) ? "YES" : "NO");
-        printf("  use count: %d\n", prop(buf, 0x1c, int));
+        if(mysterious_88) {
+            int use_count;
+            assert(!poke_mem(mysterious_88 + 0xc, &use_count, sizeof(use_count), false, false));
+            printf("  use count: %d\n", use_count);
+        }
         printf("  address: %x\n", prop(buf, 0x34, unsigned int));
+        printf("  owning task: %x\n", task);
         printf("  size: %dx%d\n", prop(buf, 0x58, int), prop(buf, 0x5c, int));
         printf("  bytes per row: %d\n", prop(buf, 0x60, int));
-        printf("  bytes per element: %d\n", prop(buf, 0x64, int));
+        printf("  bytes per element: %d\n", (int) prop(buf, 0x64, short));
         printf("  element size: %dx%d\n", (int) prop(buf, 0x66, unsigned char), (int) prop(buf, 0x67, unsigned char));
         printf("  offset: %d\n", prop(buf, 0x68, int));
-        printf("  pixel format: %x\n", prop(buf, 0x6c, unsigned int));
+        printf("  pixel format: %x = %.4s\n", prop(buf, 0x6c, unsigned int), buf + 0x6c);
         printf("  alloc size: %d\n", prop(buf, 0x74, int));
         printf("  number of planes: %d\n", prop(buf, 0x78, int));
         printf("  ycbcr matrix: %x\n", prop(buf, 0x7c, unsigned int));
@@ -310,7 +316,7 @@ int main(int argc, char **argv) {
         {0, 0, 0, 0}
     };
     int idx;
-    while((c = getopt_long(argc, argv, "r012sl:w:L:W:uh:H:v:w:c:CPUd:Dt:a:Ao:p:", options, &idx)) != -1) {
+    while((c = getopt_long(argc, argv, "r012sl:w:L:W:uh:H:v:w:c:CPUd:Dt:T:a:Ao:p:", options, &idx)) != -1) {
         did_something = true;
         switch(c) {
         case 'r':
@@ -318,9 +324,6 @@ int main(int argc, char **argv) {
             printf("cpsr=%x ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x sctlr=%x scr=%x\n", regs.cpsr, regs.ttbr0, regs.ttbr1, regs.ttbcr, regs.contextidr, regs.sctlr, regs.scr);
             printf("dbgdidr=%x dbgdrar=%x dbgdsar=%x id_dfr0=%x dbgdscr=%x\n", regs.dbgdidr, regs.dbgdrar, regs.dbgdsar, regs.id_dfr0, regs.dbgdscr);
             printf("tpidrprw=%x dacr=%x\n", regs.tpidrprw, regs.dacr);
-            uint32_t thing1 = read32(regs.tpidrprw + 0x334);
-            uint32_t thing2 = read32(thing1 + 0xfc);
-            printf("thing1=%x thing2[*%x]=%x\n", thing1, thing1 + 0xfc, thing2);
             break;
         case '0':
             assert(!syscall(8, 0, &regs));
@@ -414,7 +417,10 @@ int main(int argc, char **argv) {
             assert(!syscall(8, 29, parse_hex(optarg)));
             break;
         case 't':
-            assert(!syscall(8, 20, parse_hex(optarg)));
+            assert(!syscall(8, 20, parse_hex(optarg), 0));
+            break;
+        case 'T':
+            assert(!syscall(8, 20, parse_hex(optarg), 1));
             break;
         case 'a': {
             char *a = strsep(&optarg, "+");

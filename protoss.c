@@ -70,10 +70,12 @@ static inline void **vector_base() {
 }
 
 // :(
+#ifdef WATCHPOINTS
 extern uint32_t ter_patch_loc[]
 asm("$_44_03_99_e5_f8_60_98_e5_06_00_50_e1_01_00_00_0a");
 static uint32_t ter_orig[4];
 static bool ter_patched;
+#endif
 
 void trace_prefetch_handler();
 void watch_prefetch_handler();
@@ -138,6 +140,7 @@ int protoss_write_debug_reg(uint32_t reg, uint32_t val) {
 }
 
 int protoss_go_watch(uint32_t address, uint32_t mask) {
+#ifdef WATCHPOINTS
     if((mask & (mask + 1)) || mask == 0xffffffff) {
         IOLog("protoss_go_watch: invalid mask value %x\n", mask);
         return -1;
@@ -247,6 +250,10 @@ int protoss_go_watch(uint32_t address, uint32_t mask) {
     IOLog("%08x %08x %08x %08x\n", ter_orig[0], ter_orig[1], ter_orig[2], ter_orig[3]);
     
     return 0;
+#else
+    IOLog("no watchpoints\n");
+    return -1;
+#endif
 }
 
 int protoss_go() {
@@ -359,6 +366,7 @@ void protoss_stop() {
     
     watch_going = false;
 
+#ifdef WATCH{OINTS
     if(ter_patched) {
         memset(debug_stuff, 0, sizeof(debug_stuff));
         old_ie = ml_set_interrupts_enabled(0);
@@ -371,6 +379,7 @@ void protoss_stop() {
 
         ml_set_interrupts_enabled(old_ie);
     }
+#endif
 
     if(prefetch_saved) {
         vector_base()[3+8] = prefetch_saved;

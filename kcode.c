@@ -56,15 +56,17 @@ static void *ttbr_hook(VOID_STAR_A1_THROUGH_12) {
 static void *(*logger_old)(VOID_STAR_A1_THROUGH_12);
 static void *logger_hook(VOID_STAR_A1_THROUGH_12) {
     void *result = logger_old(A1_THROUGH_12);
-    IOLog("logger_hook: from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p pid=%d\n",
+    IOLog("logger_hook: from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p pid=%d sp=%p\n",
         __builtin_return_address(0),
         __builtin_return_address(1),
         __builtin_return_address(2),
         __builtin_return_address(3),
         __builtin_return_address(4),
         __builtin_return_address(5),
-        A1_THROUGH_7, result,
-        proc_pid(current_proc()));
+        A1_THROUGH_7,
+        result,
+        proc_pid(current_proc()),
+        &result);
     return result;
 }
 
@@ -90,13 +92,10 @@ static int vm_fault_enter_hook(void *m, void *pmap, uint32_t vaddr, vm_prot_t pr
     return vm_fault_enter_old(m, pmap, vaddr, prot, wired, change_wiring, no_cache, type_of_fault);
 }
 
-int (*weird_old)(char *buf, int size);
-int weird_hook(char *buf, int size) {
-    int ret = weird_old(buf, size);
-    IOLog("weird_old: [%x] ", size);
-    while(size--) {
-        IOLog("%02x ", (int) *buf++);
-    }
+int (*weird_old)(const char *buf, void **error);
+int weird_hook(const char *buf, void **error) {
+    IOLog("buf: (%p) %s\n", buf, buf);
+    int ret = weird_old(buf, error);
     IOLog("=> %x\n", ret);
     return ret;
 }
@@ -340,7 +339,7 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
     case 20: // tracer
         *retval = 0;
         tracer_did_trace = false;
-        if(!(tracer_old = hook((void *) uap->b, tracer_hook, false))) {
+        if(!(tracer_old = hook((void *) uap->b, tracer_hook, uap->c))) {
             *retval = -1;
         }
         break;
