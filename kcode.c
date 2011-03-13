@@ -92,12 +92,21 @@ static int vm_fault_enter_hook(void *m, void *pmap, uint32_t vaddr, vm_prot_t pr
     return vm_fault_enter_old(m, pmap, vaddr, prot, wired, change_wiring, no_cache, type_of_fault);
 }
 
-int (*weird_old)(const char *buf, void **error);
-int weird_hook(const char *buf, void **error) {
-    IOLog("buf: (%p) %s\n", buf, buf);
-    int ret = weird_old(buf, error);
-    IOLog("=> %x\n", ret);
-    return ret;
+void *(*weird_old)(VOID_STAR_A1_THROUGH_12);
+void *weird_hook(VOID_STAR_A1_THROUGH_12) {
+    void *result = weird_old(A1_THROUGH_12);
+    IOLog("weird_hook: from:%p,%p <- %p,%p <- %p,%p <- %p,%p <- %p,%p <- %p,%p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p pid=%d sp=%p\n",
+        __builtin_return_address(0), __builtin_frame_address(0),
+        __builtin_return_address(1), __builtin_frame_address(1),
+        __builtin_return_address(2), __builtin_frame_address(2),
+        __builtin_return_address(3), __builtin_frame_address(3),
+        __builtin_return_address(4), __builtin_frame_address(4),
+        __builtin_return_address(5), __builtin_frame_address(5),
+        A1_THROUGH_7,
+        result,
+        proc_pid(current_proc()),
+        &result);
+    return result;
 }
 
 static int do_something_usb_related() {
@@ -175,7 +184,7 @@ static int poke_mem(void *kaddr, uint32_t uaddr, uint32_t size, bool write, bool
     void *descriptor = 0, *map = 0;
     int retval;
     if(phys) {
-        descriptor = IOMemoryDescriptor_withPhysicalAddress((uint32_t) kaddr, 4, write ? kIODirectionOut : kIODirectionIn);
+        descriptor = IOMemoryDescriptor_withPhysicalAddress((uint32_t) kaddr, size, write ? kIODirectionOut : kIODirectionIn);
         map = IOMemoryDescriptor_map(descriptor, 0);
         kaddr = IOMemoryMap_getAddress(map);
     }
