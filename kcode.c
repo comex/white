@@ -92,20 +92,17 @@ static int vm_fault_enter_hook(void *m, void *pmap, uint32_t vaddr, vm_prot_t pr
     return vm_fault_enter_old(m, pmap, vaddr, prot, wired, change_wiring, no_cache, type_of_fault);
 }
 
-void *(*weird_old)(VOID_STAR_A1_THROUGH_12);
-void *weird_hook(VOID_STAR_A1_THROUGH_12) {
-    void *result = weird_old(A1_THROUGH_12);
-    IOLog("weird_hook: from:%p,%p <- %p,%p <- %p,%p <- %p,%p <- %p,%p <- %p,%p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p pid=%d sp=%p\n",
-        __builtin_return_address(0), __builtin_frame_address(0),
-        __builtin_return_address(1), __builtin_frame_address(1),
-        __builtin_return_address(2), __builtin_frame_address(2),
-        __builtin_return_address(3), __builtin_frame_address(3),
-        __builtin_return_address(4), __builtin_frame_address(4),
-        __builtin_return_address(5), __builtin_frame_address(5),
-        A1_THROUGH_7,
-        result,
-        proc_pid(current_proc()),
-        &result);
+void *(*weird_old)(void *ignored, void *arguments);
+void *weird_hook(void *ignored, void *arguments) {
+    void *result = weird_old(ignored, arguments);
+
+    unsigned int length = OSData_getLength(result);
+    char *bytes = OSData_getBytesNoCopy(result);
+    IOLog("got a key or something from %p (%d):\n", __builtin_return_address(0), length);
+    conslog_putc('<');
+    for(unsigned int i = 0; i < length; i++) conslog_putc(bytes[i]);
+    conslog_putc('>');
+    IOLog("\n\n");
     return result;
 }
 

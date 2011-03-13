@@ -140,6 +140,8 @@ typedef	void (*thread_continue_t)(void *param, int wait_result);
 
 LC kern_return_t kernel_thread_start(thread_continue_t continuation, void *parameter, mach_port_t *new_thread);
 
+LC void conslog_putc(char c);
+
 typedef enum IODirection { 
     kIODirectionNone = 0, 
     kIODirectionIn = 1, // User land 'read' 
@@ -189,6 +191,12 @@ asm("__ZN11OSMetaClass20getMetaClassWithNameEPK8OSSymbol");
 
 LC void *OSMetaClass_getClassName(void *metaclass)
 asm("__ZNK11OSMetaClass12getClassNameEv");
+
+LC unsigned int OSData_getLength(void *data)
+asm("__ZNK6OSData9getLengthEv");
+
+LC void *OSData_getBytesNoCopy(void *data)
+asm("__ZNK6OSData14getBytesNoCopyEv");
 
 static inline void *OSObject_getMetaClass(void *object) {
     return FIXED_METACALL(void *, 7, object);
