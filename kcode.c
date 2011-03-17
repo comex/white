@@ -92,17 +92,14 @@ static int vm_fault_enter_hook(void *m, void *pmap, uint32_t vaddr, vm_prot_t pr
     return vm_fault_enter_old(m, pmap, vaddr, prot, wired, change_wiring, no_cache, type_of_fault);
 }
 
-void *(*weird_old)(void *ignored, void *arguments);
-void *weird_hook(void *ignored, void *arguments) {
-    void *result = weird_old(ignored, arguments);
-
-    unsigned int length = OSData_getLength(result);
-    char *bytes = OSData_getBytesNoCopy(result);
-    IOLog("got a key or something from %p (%d):\n", __builtin_return_address(0), length);
-    conslog_putc('<');
-    for(unsigned int i = 0; i < length; i++) conslog_putc(bytes[i]);
-    conslog_putc('>');
-    IOLog("\n\n");
+void *(*weird_old)(VOID_STAR_A1_THROUGH_12);
+void *weird_hook(VOID_STAR_A1_THROUGH_12) {
+    void *result = weird_old(A1_THROUGH_12);
+    uint32_t *p = (uint32_t *) &p;
+    for(int i = 0; i < 32; i++) {
+        IOLog("%03x: %08x %08x %08x %08x\n", 16*i, p[0], p[1], p[2], p[3]);
+        p += 4;
+    }
     return result;
 }
 
@@ -182,7 +179,16 @@ static int poke_mem(void *kaddr, uint32_t uaddr, uint32_t size, bool write, bool
     int retval;
     if(phys) {
         descriptor = IOMemoryDescriptor_withPhysicalAddress((uint32_t) kaddr, size, write ? kIODirectionOut : kIODirectionIn);
+        if(!descriptor) {
+            IOLog("couldn't create descriptor\n");
+            return -1;
+        }
         map = IOMemoryDescriptor_map(descriptor, 0);
+        if(!map) {
+            IOLog("couldn't map descriptor\n");
+            OSObject_release(descriptor);
+            return -1;
+        }
         kaddr = IOMemoryMap_getAddress(map);
     }
 
@@ -199,8 +205,28 @@ static int poke_mem(void *kaddr, uint32_t uaddr, uint32_t size, bool write, bool
     return retval;
 }
 
+
 int do_something() {
-    return run_failsafe(NULL, NULL, 0, 0);
+    void *matching = IOService_serviceMatching("AppleS5L8930XIO", NULL); 
+    void *service = IOService_waitForMatchingService(matching, 1000000000ULL);
+    if(!service) return -1;
+    OSObject_release(matching);
+    void *platform_device = ((void **) service)[0x54/4];
+    if(!platform_device) return -2;
+    kern_return_t r = IOService_unregisterInterrupt(platform_device, 0);
+    if(r) return r;
+
+    for(unsigned int i = 0x10000; i < 0xFFF0FFFF; i += 0x10000) { // fuck endians
+        void *descriptor = IOMemoryDescriptor_withPhysicalAddress(i, 65536, kIODirectionIn);
+        void *map = IOMemoryDescriptor_map(descriptor, 0);
+        char *q = ((uint32_t *) map)[0x14/4];
+        
+        if (*((unsigned int *) q) == 0xea00000e && *((unsigned int *) (q + 4)) == 0xe59ff018) {
+            return i;
+        }
+    }
+   
+    return -4;
 }
 
 // from the loader

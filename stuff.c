@@ -360,7 +360,7 @@ int main(int argc, char **argv) {
             assert(a && optarg);
             
             uint32_t val = parse_hex(optarg);
-            assert(!poke_mem(parse_hex(a), &val, sizeof(val), true, c == 'L'));
+            assert(!poke_mem(parse_hex(a), &val, sizeof(val), true, c == 'W'));
             break;
         }
         case 'u':

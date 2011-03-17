@@ -13,7 +13,7 @@
 // the above is based on some magic in link.c
 #define FIXED_METACALL(typ, num, object, args...) ({ \
     void *_o = (object); \
-    ((typ (***)(void *, ...)) _o)[0][(num)/4](_o, ##args); \
+    ((typ (***)(void *, ...)) _o)[0][(num)](_o, ##args); \
 })
 
 typedef uint32_t user_addr_t;
@@ -182,6 +182,9 @@ asm("__ZN15IORegistryEntry8fromPathEPKcPK15IORegistryPlanePcPiPS_");
 
 LC void *IOService_mapDeviceMemoryWithIndex(void *service, unsigned int index, unsigned int options)
 asm("__ZN9IOService24mapDeviceMemoryWithIndexEjm");
+
+LC kern_return_t IOService_unregisterInterrupt(void *service, int source)
+asm("__ZN9IOService19unregisterInterruptEi");
 
 LC void *OSSymbol_withCString(const char *string)
 asm("__ZN8OSSymbol11withCStringEPKc");
