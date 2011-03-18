@@ -13,8 +13,70 @@
 #include <data/running_kernel.h>
 #include <data/loader.h>
 #include <data/link.h>
+#include <ctype.h>
 
 static struct binary kern;
+
+static addr_t find_hack_func(const struct binary *binary) {
+    return b_sym(binary, "_IOFindBSDRoot", true, true); 
+}
+
+
+// gigantic hack
+static uint32_t lookup_sym(const struct binary *binary, const char *sym) {
+    if(!strcmp(sym, "_sysent")) {
+        return b_find_sysent(binary);
+    }
+
+    // $t_XX_XX -> find "+ XX XX" in TEXT
+    if(sym[0] == '$' && ((sym[1] == 't' && sym[2] == '_') || sym[1] == '_')) {
+        // lol...
+        char *to_find = malloc(strlen(sym)+1);
+        char *p = to_find;
+        while(1) {
+            char c = *sym++;
+            switch(c) {
+            case '$': if(*sym == 't') { c = '+'; sym++; } else { c = '-'; } break;
+            case '_': c = ' '; break;
+            case 'X': c = '.'; break;
+            }
+            *p++ = c;
+            if(!c) break;
+        }
+        uint32_t result = find_data(b_macho_segrange(binary, "__TEXT"), to_find, 0, false);
+        free(to_find);
+        return result;
+    }
+    
+    // $vt_<name> -> find offset to me from the corresponding vtable 
+    // ex: __ZN11OSMetaClass20getMetaClassWithNameEPK8OSSymbol
+    if(!strncmp(sym, "$vt_", 4)) {
+        sym += 4;
+        uint32_t the_func = lookup_sym(binary, sym);
+        if(!the_func) return 0;
+
+        // find the class, and construct its vtable name
+        while(*sym && !isnumber(*sym)) sym++;
+        char *class;
+        unsigned int len = (unsigned int) strtol(sym, &class, 10) + (class - sym);
+        assert(len > 0 && len <= strlen(sym));
+        char *vt_name = malloc(len + 6);
+        memcpy(vt_name, "__ZTV", 5);
+        memcpy(vt_name + 5, sym, len);
+        vt_name[len + 5] = 0;
+        
+        uint32_t vtable = b_sym(binary, vt_name, true, false);
+        if(!vtable) return 0;
+        uint32_t loc_in_vtable = find_int32((range_t) {binary, vtable, 0x1000}, the_func, true);
+
+        uint32_t diff = loc_in_vtable - (vtable + 8);
+
+        fprintf(stderr, "b_lookup_sym: vtable index %d for %s = %x - %x\n", diff/4, sym, loc_in_vtable, vtable + 8);
+        return diff;
+    }
+
+    return b_sym(binary, sym, true, false);
+}
 
 int main(int argc, char **argv) {
     b_init(&kern);
@@ -53,7 +115,7 @@ int main(int argc, char **argv) {
                 b_load_macho(&to_load, to_load_fn, true);
                 uint32_t slide = b_allocate_from_running_kernel(&to_load);
                 if(!(to_load.mach_hdr->flags & MH_PREBOUND)) {
-                    b_relocate(&to_load, &kern, slide);
+                    b_relocate(&to_load, &kern, lookup_sym, slide);
                 }
                 b_inject_into_running_kernel(&to_load, b_find_sysent(&kern));
             }
@@ -71,7 +133,7 @@ int main(int argc, char **argv) {
                 b_init(&to_load);
                 b_load_macho(&to_load, to_load_fn, true);
                 if(!(to_load.mach_hdr->flags & MH_PREBOUND)) {
-                    b_relocate(&to_load, &kern, slide);
+                    b_relocate(&to_load, &kern, lookup_sym, slide);
                     slide += 0x10000;
                 }
                 to_load.mach_hdr->flags |= MH_PREBOUND;
@@ -97,9 +159,9 @@ int main(int argc, char **argv) {
                 b_init(&to_load);
                 b_load_macho(&to_load, to_load_fn, true);
                 if(!(to_load.mach_hdr->flags & MH_PREBOUND)) {
-                    b_relocate(&to_load, &kern, b_allocate_from_macho_fd(fd));
+                    b_relocate(&to_load, &kern, lookup_sym, b_allocate_from_macho_fd(fd));
                 }
-                b_inject_into_macho_fd(&to_load, fd);
+                b_inject_into_macho_fd(&to_load, fd, find_hack_func);
             }
             close(fd);
 
