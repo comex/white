@@ -30,16 +30,23 @@ struct mysyscall_args {
 #define A1_THROUGH_7 a1, a2, a3, a4, a5, a6, a7
 #define A1_THROUGH_12 a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12
 
+static void get_return_addresses(void *returns[6]) {
+    for(int i = 0; i < 6; i++) returns[i] = (void *) 0xeeeeeeee;
+    returns[0] = __builtin_return_address(2);
+    returns[1] = __builtin_return_address(3);
+    returns[2] = __builtin_return_address(4);
+    returns[3] = __builtin_return_address(5);
+    returns[4] = __builtin_return_address(6);
+    returns[5] = __builtin_return_address(7);
+}
+
 static void *(*vt_old)(VOID_STAR_A1_THROUGH_12);
 static void *vt_hook(VOID_STAR_A1_THROUGH_12) {
     void *result = vt_old(A1_THROUGH_12);
+    void *returns[6];
+    run_failsafe(NULL, get_return_addresses, (uint32_t) returns, 0);
     IOLog("vt_hook: from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p vt=%p result=%p\n",
-        __builtin_return_address(0),
-        __builtin_return_address(1),
-        __builtin_return_address(2),
-        __builtin_return_address(3),
-        __builtin_return_address(4),
-        __builtin_return_address(5),
+        returns[0], returns[1], returns[2], returns[3], returns[4], returns[5],
         A1_THROUGH_7, *((void **) a1), result);
     return result;
 }
@@ -56,13 +63,10 @@ static void *ttbr_hook(VOID_STAR_A1_THROUGH_12) {
 static void *(*logger_old)(VOID_STAR_A1_THROUGH_12);
 static void *logger_hook(VOID_STAR_A1_THROUGH_12) {
     void *result = logger_old(A1_THROUGH_12);
+    void *returns[6];
+    run_failsafe(NULL, get_return_addresses, (uint32_t) returns, 0);
     IOLog("logger_hook: from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p pid=%d sp=%p\n",
-        __builtin_return_address(0),
-        __builtin_return_address(1),
-        __builtin_return_address(2),
-        __builtin_return_address(3),
-        __builtin_return_address(4),
-        __builtin_return_address(5),
+        returns[0], returns[1], returns[2], returns[3], returns[4], returns[5],
         A1_THROUGH_7,
         result,
         proc_pid(current_proc()),
@@ -95,8 +99,9 @@ static int vm_fault_enter_hook(void *m, void *pmap, uint32_t vaddr, vm_prot_t pr
 void *(*weird_old)(VOID_STAR_A1_THROUGH_12);
 void *weird_hook(VOID_STAR_A1_THROUGH_12) {
     void *result = weird_old(A1_THROUGH_12);
-    uint32_t *p = (uint32_t *) &p;
-    for(int i = 0; i < 32; i++) {
+    IOLog("weird: a1=%p a2=%p a3=%p a4=%p from=%p,%p,%p\n", a1, a2, a3, a4, __builtin_return_address(0), __builtin_return_address(1), __builtin_return_address(2));
+    uint32_t *p = a3;
+    for(int i = 0; i < 5; i++) {
         IOLog("%03x: %08x %08x %08x %08x\n", 16*i, p[0], p[1], p[2], p[3]);
         p += 4;
     }
@@ -207,25 +212,6 @@ static int poke_mem(void *kaddr, uint32_t uaddr, uint32_t size, bool write, bool
 
 
 int do_something() {
-    void *matching = IOService_serviceMatching("AppleS5L8930XIO", NULL); 
-    void *service = IOService_waitForMatchingService(matching, 1000000000ULL);
-    if(!service) return -1;
-    OSObject_release(matching);
-    void *platform_device = ((void **) service)[0x54/4];
-    if(!platform_device) return -2;
-    kern_return_t r = IOService_unregisterInterrupt(platform_device, 0);
-    if(r) return r;
-
-    for(unsigned int i = 0x10000; i < 0xFFF0FFFF; i += 0x10000) { // fuck endians
-        void *descriptor = IOMemoryDescriptor_withPhysicalAddress(i, 65536, kIODirectionIn);
-        void *map = IOMemoryDescriptor_map(descriptor, 0);
-        char *q = ((uint32_t *) map)[0x14/4];
-        
-        if (*((unsigned int *) q) == 0xea00000e && *((unsigned int *) (q + 4)) == 0xe59ff018) {
-            return i;
-        }
-    }
-   
     return -4;
 }
 

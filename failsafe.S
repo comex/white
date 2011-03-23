@@ -3,7 +3,10 @@
 .arm
 .globl _run_failsafe
 _run_failsafe:
-    push {r4-r8, r10, r11, lr}
+    push {r4-r7, lr}
+    add r7, sp, #0xc
+    push {r8, r10, r11}
+
     mov r4, r0
     mov r5, r1
     
@@ -37,7 +40,8 @@ copyout_origin:
     strne r0, [r4]
 
     mov r0, #0
-    pop {r1, r2, r3, r4-r8, r10, r11, pc}
+    pop {r1, r2, r3, r8, r10, r11}
+    pop {r4-r7, pc}
 
 oops:
     # it failed; try to find our stack frame
@@ -54,7 +58,8 @@ loop:
     mov r1, #0
     str r1, [sp, #-4]
     
-    pop {r1, r2, r4-r8, r10, r11, lr}
+    pop {r1, r2, r8, r10, r11}
+    pop {r4-r7, lr}
     str r1, [r2]
 
     mov r0, #-1
