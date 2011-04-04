@@ -93,6 +93,8 @@ asm("$t_f0_b5_03_af_05_46_1d_ee_90_4f_d4_f8");
 
 LC void vm_map_deallocate(vm_map_t map);
 
+LC void clock_get_system_microtime(uint32_t *sec, uint32_t *usec);
+
 // locks
 
 LC lck_grp_t *lck_grp_alloc_init(const char *grp_name, void *attr);
@@ -115,6 +117,8 @@ LC void wakeup(void *chan);
 
 //
 
+LC void Debugger(const char *message);
+
 LC void IOLog(const char *msg, ...) __attribute__((format (printf, 1, 2)));
 
 LC void IOSleep(unsigned int milliseconds);
@@ -128,6 +132,8 @@ LC int proc_pid(struct proc *proc);
 LC struct proc *current_proc();
 
 LC task_t current_task();
+
+LC void *current_thread();
 
 LC void panic(const char *string, ...);
 

@@ -174,27 +174,28 @@ static void dump_creep() {
 }
 
 struct trace_entry {
-    uint32_t r[13];
+    uint32_t sp;
     uint32_t lr;
+    uint32_t r[13];
+    uint32_t pc;
 } __attribute__((packed));
 
 static void dump_protoss() {
-    size_t size = 0x3fff * sizeof(struct trace_entry);
+    size_t size = 0x8000 * sizeof(struct trace_entry);
     struct trace_entry *buf = malloc(size);
     memset(buf, 0, size);
     assert(!syscall(8, 14, 0, buf, size));
-    struct trace_entry last;
-    memset(&last, 0, sizeof(struct trace_entry));
-    for(int i = 0; i < (size / sizeof(struct trace_entry)); i++) {
-        if(buf[i].lr) {
-            printf("%.5d %08x", i, buf[i].lr);
+    for(int i = 1; i < ((size - 1) / sizeof(struct trace_entry)); i++) {
+        if(buf[i].pc) {
+            printf("%.5d %08x", i, buf[i].pc);
             for(int r = 0; r < 12; r++)  {
-                if(buf[i].r[r] != last.r[r]) {
+                if(buf[i].r[r] != buf[i-1].r[r]) {
                     printf(" R%d=%08x", r, buf[i].r[r]);
                 }
             }
+            if(buf[i].sp != buf[i-1].sp) printf(" SP=%08x", buf[i].sp);
+            if(buf[i].lr != buf[i-1].lr) printf(" LR=%08x", buf[i].lr);
             printf("\n");
-            last = buf[i];
         }
     }
     free(buf);
@@ -210,11 +211,11 @@ struct watch_entry {
 } __attribute__((packed));
 
 static void dump_watch() {
-    size_t size = 0x3fff * sizeof(struct watch_entry);
+    size_t size = 0x8000 * sizeof(struct watch_entry);
     struct watch_entry *buf = malloc(size);
     memset(buf, 0, size);
     assert(!syscall(8, 14, 1, buf, size));
-    for(int i = 0; i < (size / sizeof(struct watch_entry)); i++) {
+    for(int i = 0; i < ((size - 1) / sizeof(struct watch_entry)); i++) {
         if(buf[i].accessed_address) {
             printf("%.5d %08x %s%08x] <- %08x", i, buf[i].accessed_address, buf[i].was_store ? "STORE [was " : "LOAD [", buf[i].accessed_value, buf[i].pc);
             for(int r = 0; r <= 12; r++)  {
@@ -296,6 +297,8 @@ uint32_t parse_hex(const char *optarg) {
 int main(int argc, char **argv) {
     int c;
     bool did_something = false;
+    int tracer_ticks = 0;
+    int hook_force = 0;
     struct regs regs;
     
     struct option options[] = {
@@ -305,18 +308,16 @@ int main(int argc, char **argv) {
         {"metaclass", required_argument, 0, 135},
         {"crash-kernel", no_argument, 0, 129},
         {"test-protoss", no_argument, 0, 130},
-        {"vm_fault_enter", required_argument, 0, 131},
         {"weird", required_argument, 0, 132},
-        {"vt", required_argument, 0, 133},
-        {"ttbr", required_argument, 0, 140},
         {"read-debug-reg", required_argument, 0, 136},
         {"write-debug-reg", required_argument, 0, 137},
         {"do-something", no_argument, 0, 138},
         {"time", no_argument, 0, 139},
+        {"ticks", required_argument, 0, 141},
         {0, 0, 0, 0}
     };
     int idx;
-    while((c = getopt_long(argc, argv, "r012sl:w:L:W:uh:H:v:w:c:CPUd:Dt:T:a:Ao:p:", options, &idx)) != -1) {
+    while((c = getopt_long(argc, argv, "r012sl:w:L:W:uh:v:w:c:CPUdt:a:Ao:p:f:", options, &idx)) != -1) {
         did_something = true;
         switch(c) {
         case 'r':
@@ -367,13 +368,7 @@ int main(int argc, char **argv) {
             assert(!syscall(8, 6));
             break;
         case 'h':
-            assert(!syscall(8, 7, parse_hex(optarg), 0));
-            break;
-        case 'H':
-            assert(!syscall(8, 7, parse_hex(optarg), 1));
-            break;
-        case 131:
-            assert(!syscall(8, 8, parse_hex(optarg)));
+            assert(!syscall(8, 7, parse_hex(optarg), hook_force));
             break;
         case 132:
             assert(!syscall(8, 9, parse_hex(optarg)));
@@ -405,22 +400,19 @@ int main(int argc, char **argv) {
             assert(!syscall(8, 15));
             break;
         case 'd':
-            assert(!syscall(8, 17, parse_hex(optarg)));
-            break;
-        case 'D':
-            assert(!syscall(8, 18));
+            assert(!syscall(8, 17));
             break;
         case 133:
             assert(!syscall(8, 19, parse_hex(optarg)));
             break;
-        case 140:
-            assert(!syscall(8, 29, parse_hex(optarg)));
+        case 141:
+            tracer_ticks = atoi(optarg);
+            break;
+        case 'f':
+            hook_force = 1;
             break;
         case 't':
-            assert(!syscall(8, 20, parse_hex(optarg), 0));
-            break;
-        case 'T':
-            assert(!syscall(8, 20, parse_hex(optarg), 1));
+            assert(!syscall(8, 20, parse_hex(optarg), hook_force, tracer_ticks));
             break;
         case 'a': {
             char *a = strsep(&optarg, "+");
@@ -450,7 +442,7 @@ int main(int argc, char **argv) {
         case 139: {
             mach_timebase_info_data_t info;
             mach_timebase_info(&info);
-            printf("%llu * %d/%d\n", mach_absolute_time(), info.numer, info.denom);
+            printf("mach_absolute_time: %llu * %d/%d\n", mach_absolute_time(), info.numer, info.denom);
             break;
         }
         case '?':
@@ -474,11 +466,8 @@ usage:
            "    -L addr:               do a physical read32\n"
            "    -W addr=value:         do a physical write32\n"
            "    -u:                    unhook\n"
+           "    -f:                    when hooking, force\n"
            "    -h addr:               hook for generic logging\n"
-           "    -H addr:               forcibly hook for generic logging\n"
-           "    --vt addr:             hook for generic logging + vtable\n"
-           "    --ttbr addr:           hook for generic logging + ttbrs\n"
-           "    --vm_fault_enter addr: hook vm_fault_enter for logging\n"
            "    --weird addr:          hook weird for logging\n"
            "    -c addr+size:          hook range for creep\n"
            "    -C:                    dump creep results\n"
@@ -496,6 +485,7 @@ usage:
            "    --read-debug-reg num:  dump debug reg\n"
            "    --write-debug-reg num=val: write debug reg\n"
            "    -o addr:               get object info\n"
+           "    -d:                    Debugger()\n"
            "    --do-something:        so transient I won't make it a real option\n"
            "    --time:                mach_absolute_time\n"
            , argv[0]);

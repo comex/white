@@ -42,19 +42,20 @@ union dbgbcr {
 };
 
 struct trace_entry {
-    uint32_t r[13];
+    uint32_t sp;
     uint32_t lr;
+    uint32_t r[13];
+    uint32_t pc;
 } __attribute__((packed));
 
 static struct trace_entry *trace_start;
 extern struct trace_entry *trace_ptr;
+static const int num_trace_entries = 0x8000;
 
-static const int num_trace_entries = 0x4000;
-static const int num_watch_entries = 0x4000;
-
+#ifdef WATCHPOINTS
 struct watch_entry {
     uint32_t r[13];
-    //uint32_t lr;
+    uint32_t lr;
     uint32_t pc;
     uint32_t accessed_address;
     uint32_t accessed_value;
@@ -63,6 +64,10 @@ struct watch_entry {
 
 static struct watch_entry *watch_start;
 extern struct watch_entry *watch_ptr;
+static const int num_watch_entries = 0x8000;
+
+static uint32_t debug_stuff[64];
+#endif
 
 __attribute__((const))
 static inline void **vector_base() {
@@ -75,16 +80,16 @@ extern uint32_t ter_patch_loc[]
 asm("$_44_03_99_e5_f8_60_98_e5_06_00_50_e1_01_00_00_0a");
 static uint32_t ter_orig[4];
 static bool ter_patched;
-#endif
 
-void trace_prefetch_handler();
 void watch_prefetch_handler();
 void watch_data_handler();
-extern void *prefetch_saved;
 extern void *data_saved;
-static bool trace_going, watch_going;
+#endif
+static bool watch_going;
 
-static uint32_t debug_stuff[64];
+void trace_prefetch_handler();
+extern void *prefetch_saved;
+static bool trace_going;
 
 extern uint32_t volatile *dbg_map;
 
@@ -289,7 +294,7 @@ int protoss_go() {
     dbgbcr5.dbgbvr_unlinked_or_linked = 1; // linked
     dbgbcr5.linked_brp_num = 4;
     dbgbcr5.security_state_control = 0; // match in either security state
-    dbgbcr5.byte_address_select = 0xf; // I don't understand why this exists.
+    dbgbcr5.byte_address_select = 0xf;
     dbgbcr5.z4 = 0;
     dbgbcr5.privileged_mode_control = 0; // user, system, svc *but not* exception
     dbgbcr5.breakpoint_enable = 1; // woo
@@ -386,10 +391,12 @@ void protoss_stop() {
         prefetch_saved = NULL;
     }
 
+#ifdef WATCH{OINTS
     if(data_saved) {
         vector_base()[4+8] = data_saved;
         data_saved = NULL;
     }
+#endif
 }
 
 void protoss_unload() {
@@ -400,12 +407,14 @@ void protoss_unload() {
         trace_start = NULL;
         trace_ptr = NULL;
     }
+#ifdef WATCHPOINTS
     if(watch_start) {
-        //IOLog("watch_ptr was %d\n", watch_ptr - watch_start);
+        IOLog("watch_ptr was %d\n", watch_ptr - watch_start);
         IOFree(watch_start);
         watch_start = NULL;
         watch_ptr = NULL;
     }
+#endif
 }
 
 int protoss_get_records(int type, user_addr_t buf, uint32_t bufsize) {
@@ -416,10 +425,12 @@ int protoss_get_records(int type, user_addr_t buf, uint32_t bufsize) {
         ptr = trace_start;
         size = num_trace_entries * sizeof(struct trace_entry);
         break;
+#ifdef WATCHPOINTS
     case 1:
         ptr = watch_start;
         size = num_watch_entries * sizeof(struct watch_entry);
         break;
+#endif
     default:
         return -1;
     }

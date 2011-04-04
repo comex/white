@@ -23,9 +23,10 @@ loop:
     bne loop
     ldrh sp, [r9, #8]
     strh sp, [lr]
-    and sp, #0x38
+    and sp, #0x78
     add pc, sp
     nop
+    # a few of these don't make sense
     str r0, [r9, #4]
     b end
     str r1, [r9, #4]
@@ -41,6 +42,22 @@ loop:
     str r6, [r9, #4]
     b end
     str r7, [r9, #4]
+    b end
+    str r8, [r9, #4]
+    b end
+    str r9, [r9, #4]
+    b end
+    str r10, [r9, #4]
+    b end
+    str r11, [r9, #4]
+    b end
+    str r12, [r9, #4]
+    b end
+    str sp, [r9, #4]
+    b end
+    str lr, [r9, #4]
+    b end
+    str pc, [r9, #4]
 end:
     mcr p15, 0, lr, c7, c14, 1
     mcr p15, 0, lr, c7, c5, 1

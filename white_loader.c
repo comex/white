@@ -25,7 +25,7 @@ static addr_t find_hack_func(const struct binary *binary) {
 // gigantic hack
 static uint32_t lookup_sym(const struct binary *binary, const char *sym) {
     if(!strcmp(sym, "_sysent")) {
-        return b_find_sysent(binary);
+        return find_int32(b_macho_segrange(binary, "__DATA"), 0x861000, true) + 4;
     }
 
     // $t_XX_XX -> find "+ XX XX" in TEXT
@@ -107,6 +107,8 @@ int main(int argc, char **argv) {
 #ifdef __APPLE__
         case 'l': {
             if(!kern.valid) goto usage;
+            b_prepare_running_kernel(&kern);
+            uint32_t sysent = lookup_sym(&kern, "_sysent");
             if(!*argv) goto usage;
             char *to_load_fn;
             while(to_load_fn = *argv++) {
@@ -117,7 +119,7 @@ int main(int argc, char **argv) {
                 if(!(to_load.mach_hdr->flags & MH_PREBOUND)) {
                     b_relocate(&to_load, &kern, lookup_sym, slide);
                 }
-                b_inject_into_running_kernel(&to_load, b_find_sysent(&kern));
+                b_inject_into_running_kernel(&to_load, sysent);
             }
             return 0;
         }
