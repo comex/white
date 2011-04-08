@@ -2,7 +2,6 @@ GCC ?= /Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/gcc-4.2 -arch ar
 CFLAGS += -g3 -std=gnu99 -Os -I. -fno-builtin-printf -fno-builtin-memset -fno-builtin-memcpy -Wall -Wno-parentheses -Wno-pointer-to-int-cast
 all: stuff white_loader kcode.dylib mem.dylib serialplease.dylib
 %.o: %.c kinc.h
-	echo "CFLAGS: $(CFLAGS)"
 	$(GCC) $(CFLAGS) -c -o $@ $< -DIMG3_SUPPORT -Wreturn-type
 %.o: %.S
 	$(GCC) $(CFLAGS) -c -o $@ $< -DIMG3_SUPPORT

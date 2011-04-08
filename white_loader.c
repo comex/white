@@ -71,7 +71,7 @@ static uint32_t lookup_sym(const struct binary *binary, const char *sym) {
 
         uint32_t diff = loc_in_vtable - (vtable + 8);
 
-        fprintf(stderr, "b_lookup_sym: vtable index %d for %s = %x - %x\n", diff/4, sym, loc_in_vtable, vtable + 8);
+        //fprintf(stderr, "b_lookup_sym: vtable index %d for %s = %x - %x\n", diff/4, sym, loc_in_vtable, vtable + 8);
         return diff;
     }
 

@@ -174,9 +174,9 @@ static void dump_creep() {
 }
 
 struct trace_entry {
+    uint32_t r[13];
     uint32_t sp;
     uint32_t lr;
-    uint32_t r[13];
     uint32_t pc;
 } __attribute__((packed));
 
@@ -309,6 +309,7 @@ int main(int argc, char **argv) {
         {"crash-kernel", no_argument, 0, 129},
         {"test-protoss", no_argument, 0, 130},
         {"weird", required_argument, 0, 132},
+        {"note", required_argument, 0, 142},
         {"read-debug-reg", required_argument, 0, 136},
         {"write-debug-reg", required_argument, 0, 137},
         {"do-something", no_argument, 0, 138},
@@ -317,7 +318,7 @@ int main(int argc, char **argv) {
         {0, 0, 0, 0}
     };
     int idx;
-    while((c = getopt_long(argc, argv, "r012sl:w:L:W:uh:v:w:c:CPUdt:a:Ao:p:f:", options, &idx)) != -1) {
+    while((c = getopt_long(argc, argv, "r012sl:w:L:W:uh:v:w:c:CPUdt:a:Ao:p:f", options, &idx)) != -1) {
         did_something = true;
         switch(c) {
         case 'r':
@@ -370,8 +371,11 @@ int main(int argc, char **argv) {
         case 'h':
             assert(!syscall(8, 7, parse_hex(optarg), hook_force));
             break;
+        case 142:
+            assert(!syscall(8, 8, parse_hex(optarg), hook_force));
+            break;
         case 132:
-            assert(!syscall(8, 9, parse_hex(optarg)));
+            assert(!syscall(8, 9, parse_hex(optarg), hook_force));
             break;
         case 'c': {
             char *a = strsep(&optarg, "+");

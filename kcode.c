@@ -1,21 +1,5 @@
 #include "kinc.h"
-// black.c
-void *hook(void *addr, void *replacement, bool force, void *tag);
-void *unhook(void *stub);
-// creep.c
-int creep_go(void *start, int size);
-void creep_get_records(user_addr_t buf, uint32_t bufsize);
-void creep_stop();
-// protoss.c
-int protoss_go();
-int protoss_go_watch(uint32_t address, uint32_t mask);
-int protoss_get_records(int type, user_addr_t buf, uint32_t bufsize);
-void protoss_stop();
-void protoss_unload();
-uint32_t protoss_dump_debug_reg(uint32_t reg);
-int protoss_write_debug_reg(uint32_t reg, uint32_t val);
-// failsafe.S
-int run_failsafe(void *result, void *func, uint32_t arg1, uint32_t arg2);
+#include "kcode.h"
 
 static void *hook_tag;
 
@@ -29,6 +13,10 @@ struct apply_args {
     void *r7; // not actually part of the __builtin_apply_args() struct
 };
 
+struct apply_result {
+    void *r0, *r1, *r2, *r3;
+};
+
 struct frame {
     struct frame *r7;
     void *lr;
@@ -37,7 +25,7 @@ struct frame {
 static void get_return_addresses(struct frame *frame, void **returns, int n) {
     while(n--) {
         if(!frame || frame == (void *) 0xffffffff) {
-            *returns++ = 0xeeeeeeee;
+            *returns++ = (void *) 0xeeeeeeee;
         } else {
             *returns++ = frame->lr;
             frame = frame->r7;
@@ -45,11 +33,11 @@ static void get_return_addresses(struct frame *frame, void **returns, int n) {
     }
 }
 
-static void *hook_generic(bool should_trace, void *old, struct apply_args *args) {
+static void *generic_hook(bool should_trace, void *old, struct apply_args *args) {
     if(should_trace) {
         protoss_go();
     }
-    void *result = __builtin_apply(old, args, 60);
+    struct apply_result *result = __builtin_apply(old, args, 60);
     if(should_trace) {
         protoss_stop();
     }
@@ -59,24 +47,41 @@ static void *hook_generic(bool should_trace, void *old, struct apply_args *args)
         should_trace ? " (traced)" : "",
         returns[0], returns[1], returns[2], returns[3], returns[4], returns[5],
         args->r0, args->r1, args->r2, args->r3, args->sp[0], args->sp[1], args->sp[2],
-        result,
+        result->r0,
         proc_pid(current_proc()));
     return result;
 }
 
+static void noreturn_hook(uint32_t regs[14], uint32_t pc) {
+#if 0
+    // meant for hooking syscall
+    static uint32_t skipped, count[0x1000];
+    if(++count[regs[12] & 0xfff] > 10) {
+        skipped++; // we get it already!
+        return;
+    } else if(skipped) {
+        IOLog("(skipped %u entries)\n", skipped);
+        memset(count, 0, sizeof(count));
+        skipped = 0;
+    }
+#endif
+    IOLog("[%d] @%x hook: r0=0x%x r1=0x%x r2=0x%x r3=0x%x r4=0x%x r5=0x%x r6=0x%x r7=0x%x r8=0x%x r9=0x%x r10=0x%x r11=0x%x r12=0x%x sp=%p lr=0x%x\n", proc_pid(current_proc()), pc, regs[0], regs[1], regs[2], regs[3], regs[4], regs[5], regs[6], regs[7], regs[8], regs[9], regs[10], regs[11], regs[12], regs + 14, regs[13]);
+}
+
 static void *logger_hook(void *old, struct apply_args *args) {
-    __builtin_return(hook_generic(false, old, args));
+    __builtin_return(generic_hook(false, old, args));
 }
 
 static void *tracer_hook(void *old, struct apply_args *args) {
     lck_mtx_lock(tracer_lck);
     bool should_trace = !tracer_ticks--;
-    void *result = hook_generic(should_trace, old, args);
+    void *result = generic_hook(should_trace, old, args);
     lck_mtx_unlock(tracer_lck);
     __builtin_return(result);
 }
 
 static void *weird_hook(void *old, struct apply_args *args) {
+    //IOLog("weird_hook: %d: %p, %p, %p, %p\n", args->sp[12], args->sp[0], args->sp[1], args->sp[2], args->sp[3]); 
     __builtin_return(__builtin_apply(old, args, 60));
 }
 
@@ -165,6 +170,17 @@ static int poke_mem(void *kaddr, uint32_t uaddr, uint32_t size, bool write, bool
     return retval;
 }
 
+static int add_hook(void *addr, void *replacement, int mode) {
+    void *tag = hook(addr, replacement, mode, hook_tag);
+    if(tag) {
+        IOLog("tag: %p\n", tag);
+        hook_tag = tag;
+        return 0;
+    } else {
+        return -1;
+    }
+}
+
 
 int do_something() {
     uint32_t time, microtime;
@@ -233,10 +249,7 @@ struct regs {
 
 int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
 {
-    //IOLog("Hi mode=%d\n", uap->mode);
-    //IOLog("kernel_pmap = %p nx_enabled = %d\n", kernel_pmap, kernel_pmap[0x420/4]);
-    // Turn off nx_enabled so we can make pages executable in kernel land.
-    kernel_pmap[0x420/4] = 0;
+    IOLog("%p called me\n", __builtin_return_address(1));
     switch(uap->mode) {
     case 0: { // get regs
         struct regs regs;
@@ -271,11 +284,13 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         fini_();
         break;
     case 7: // hook a function, log args
-        *retval = (hook_tag = hook((void *) uap->b, logger_hook, uap->c, hook_tag)) ? 0 : -1;
-        IOLog("hook_tag = %p\n", hook_tag);
+        *retval = add_hook((void *) uap->b, logger_hook, uap->c);
+        break;
+    case 8: // noreturn
+        *retval = add_hook((void *) uap->b, noreturn_hook, 2);
         break;
     case 9: // hook weird
-        *retval = (hook_tag = hook((void *) uap->b, weird_hook, uap->c, hook_tag)) ? 0 : -1;
+        *retval = add_hook((void *) uap->b, weird_hook, uap->c);
         break;
     case 10:
         *retval = creep_go((void *) uap->b, (int) uap->c);
@@ -301,7 +316,7 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         break;
     case 20: // tracer
         tracer_ticks = uap->d;
-        *retval = (hook_tag = hook((void *) uap->b, tracer_hook, uap->c, hook_tag)) ? 0 : -1;
+        *retval = add_hook((void *) uap->b, tracer_hook, uap->c);
         break;
     case 21:
         *retval = lookup_metaclass(uap->b);
