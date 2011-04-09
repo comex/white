@@ -16,69 +16,68 @@ _trace_prefetch_handler:
 
     ;# ok, this is us
     sub lr, #4
-    srsdb sp!, #0x13
 
-    ldr sp, _dbg_regs
-    ldr lr, c5acce55
-    str lr, [sp, #0xfb0]
-    ldr lr, [sp, #0x314] 
-    ldr lr, [sp, #0x154]
-    bic lr, #1
-    str lr, [sp, #0x154]
+    strd r0, r1, saved_regs 
 
-    cpsid aif, #0x13
+    ldr r0, _dbg_regs
+    ldr r1, c5acce55
+    str r1, [r0, #0xfb0]
+    ldr r1, [r0, #0x314] 
 
-    push {r0-r2}
-    ldr r0, [sp, #0xc] ;# saved LR
+    ldr r1, [r0, #0x154]
+    bic r1, #1
+    str r1, [r0, #0x154]
 
-    ldr r2, _trace_ptr
-    ldr r1, [r2]
+    ldr sp, _trace_ptr
+    ldr r1, [sp]
     cmp r1, #0
     bne fin1 ;# out of space
 
-    ldr r1, [r2, #-4]
-    cmp r1, r0
+    ldr r1, [sp, #-4]
+    cmp r1, lr
     beq fin1 ;# duplicate
 
-    and r1, r0, #0xf0000000
+    and r1, lr, #0xf0000000
     cmp r1, #0xf0000000
     beq fin1 ;# (probably) in kcode; not interesting
 
-    ldrd r0, r1, [sp]
-    strd r0, r1, [r2], #8
-    ldr r1, [sp, #8]
-    str r1, [r2], #4
-    stmia r2!, {r3-r12, sp, lr}
-    ldr r0, [sp, #0xc]
-    str r0, [r2], #4
+    ;# go spelunking
+    cpsid aif, #0x13
+    mov r0, sp
+    mov r1, lr
+    cpsid aif, #0x17
 
-    str r2, _trace_ptr
+    stmia sp!, {r0-r1}
+    ldrd r0, r1, saved_regs
+    stmia sp!, {r0-r12, lr}
+
+    str sp, _trace_ptr
 
 fin1:
-    ldr r2, _dbg_regs
+    ldr r0, _dbg_regs
     ;# don't get caught at exactly the same location
-    bic r1, r0, #3
-    str r1, [r2, #0x114]
+    bic r1, lr, #3
+    str r1, [r0, #0x114]
 
     ;# and the BCR
-    ldr r1, [sp, #0x10] ;# SPSR
+    mrs r1, spsr
     tst r1, #(1 << 5)
-    moveq r0, #(15 << 5) ;# ARM -> 0b1111
-    andne r1, r0, #2 ;# Thumb -> 0b1100 or 0b0011
-    movne r0, #(3 << 5)
-    movne r0, r0, lsl r1
+    moveq sp, #(15 << 5) ;# ARM -> 0b1111
+    andne r1, lr, #2 ;# Thumb -> 0b1100 or 0b0011
+    movne sp, #(3 << 5)
+    movne sp, sp, lsl r1
 
-    ldr r1, [r2, #0x154]
+    ldr r1, [r0, #0x154]
     bic r1, #(15 << 5)
-    orr r1, r0 ;# byte address select
+    orr r1, sp ;# byte address select
     orr r1, #1
-    str r1, [r2, #0x154]
+    str r1, [r0, #0x154]
 
-    mov r0, sp
-    add sp, #0x14
-    cpsid aif, #0x17
-    ldm r0, {r0-r2, pc}^
+    ldrd r0, r1, saved_regs
+    movs pc, lr
 
+c5acce55: .long 0xc5acce55
+saved_regs: .long 0, 0
 
 #ifdef WATCHPOINTS
 .globl _watch_prefetch_handler
@@ -132,75 +131,101 @@ _watch_data_handler:
     cmp sp, #0x10
     ldreq pc, _data_saved
 
-    #movs pc, lr
-    #mov r0, #0
-    #ldr pc, [r0]
+loque_loop:
+    adr sp, loque
+    ldrex sp, [sp]
+    cmp sp, #0
+    bne loque_loop
+    adr sp, loque
+    .long 0xe18ddf9d ;# strex sp, sp, [sp]
+    cmp sp, #0
+    bne loque_loop
 
-    str lr, saved_lr
+    sub lr, #8
+
+    strd r0, r1, saved_regs
 
 bpstuff:
-    ldr sp, _dbg_regs
-    ldr lr, c5acce55
-    str lr, [sp, #0xfb0]
-    ldr lr, [sp, #0x314] ;# do not remove
+    ldr r0, _dbg_regs
+    ldr r1, c5acce55
+    str r1, [r0, #0xfb0]
+    ldr r1, [r0, #0x314] ;# do not remove
 
     ;# disable the watchpoint
-    ldr lr, [sp, #0x1c0]
-    and lr, #0xfffffffe
-    str lr, [sp, #0x1c0]
-    
-    ;# enable the breakpoint
-    ldr lr, saved_lr
-    sub lr, #8
-    and lr, #0xfffffffc
-    str lr, [sp, #0x100]
-
-    ldr lr, [sp, #0x140]
-    orr lr, #1
-    str lr, [sp, #0x140]
-# done
+    ldr r1, [r0, #0x1c0]
+    bic lr, #1
+    str r1, [r0, #0x1c0]
 
     ldr sp, _watch_ptr
-    cmp sp, #0
-    beq fin2
-    ldr lr, [sp]
-    cmp lr, #0
+    ldr r1, [sp]
+    cmp r1, #0
     bne fin2 ;# out of space
     
-    # r[0-12], pc
-    ldr sp, _watch_ptr
-    ldr lr, saved_lr
-    sub lr, #8
+    ;# go spelunking
+    cpsid aif, #0x13
+    mov r0, sp
+    mov r1, lr
+    cpsid aif, #0x17
+
+    stmia sp!, {r0-r1}
+    ldrd r0, r1, saved_regs
     stmia sp!, {r0-r12, lr}
 
     # accessed_address
     # this is technically undefined
-    mrc p15, 0, lr, c6, c0, 0
-    stmia sp!, {lr}
+    mrc p15, 0, r0, c6, c0, 0
+    stmia sp!, {r0}
 
     # accessed_value 
-    ldr lr, [lr]
-    stmia sp!, {lr}
+    ldr r0, [r0]
 
     # was_store
-    mrc p15, 0, lr, c5, c0, 0
-    ands lr, #(1 << 11)
-    movne lr, #1
-    stmia sp!, {lr}
+    mrc p15, 0, r1, c5, c0, 0
+    ands r1, #(1 << 11)
+    movne r1, #1
+
+    stmia sp!, {r0, r1}
     
     str sp, _watch_ptr
+    
+    ldr r0, _dbg_regs
+    ;# enable the breakpoint
+    bic r1, lr, #3
+    str r1, [r0, #0x114]
+    
+    ;# and the BCR
+    mrs r1, spsr
+    tst r1, #(1 << 5)
+    moveq sp, #(15 << 5) ;# ARM -> 0b1111
+    andne r1, lr, #2 ;# Thumb -> 0b1100 or 0b0011
+    movne sp, #(3 << 5)
+    movne sp, sp, lsl r1
 
+    ldr r1, [r0, #0x154]
+    bic r1, #(15 << 5)
+    orr r1, sp
+    orr r1, #1
+    str r1, [r0, #0x154]
+
+    ldr r1, [r0, #0x150]
+    orr r1, #1
+    str r1, [r0, #0x150]
+# done
+    
 fin2:
-    ldr lr, saved_lr
+    mov r0, #0
+    str r0, loque
 
-    subs pc, lr, #8
+    ldrd r0, r1, saved_regs
+    movs pc, lr
 #endif
+
 
 .globl _trace_ptr, _prefetch_saved, _data_saved, _dbg_regs
 _trace_ptr: .long 0
+_watch_ptr: .long 0
 _prefetch_saved: .long 0
 _data_saved: .long 0
 _dbg_regs: .long 0
 
-c5acce55: .long 0xc5acce55
-
+loque: .long 0

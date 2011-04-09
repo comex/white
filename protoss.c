@@ -67,9 +67,9 @@ static struct dbg_state dbg_state;
 void **const vector_base = (void **) 0xffff0000;
 
 struct trace_entry {
-    uint32_t r[13];
     uint32_t sp;
     uint32_t lr;
+    uint32_t r[13];
     uint32_t pc;
 } __attribute__((packed));
 
@@ -78,8 +78,9 @@ extern struct trace_entry *trace_ptr;
 
 #ifdef WATCHPOINTS
 struct watch_entry {
-    uint32_t r[13];
+    uint32_t sp;
     uint32_t lr;
+    uint32_t r[13];
     uint32_t pc;
     uint32_t accessed_address;
     uint32_t accessed_value;
@@ -143,7 +144,6 @@ int protoss_write_debug_reg(uint32_t reg, uint32_t val) {
 
 static void twiddle_dbg(bool on) {
     begin_debug();
-    dbg_regs->dbgdscr |= 0x8000; // turn on debug
 
     for(int i = 0; i < 16; i++) {
         dbg_regs->state.bcr[i] = (struct dbgbcr) {0};
@@ -157,6 +157,7 @@ static void twiddle_dbg(bool on) {
             dbg_regs->state.wvr[i] = dbg_state.wvr[i];
             dbg_regs->state.wcr[i] = dbg_state.wcr[i];
         }
+        dbg_regs->dbgdscr |= 0x8000; // turn on debug
     } else {
         dbg_regs->dbgdscr &= ~0x8000;
     }
@@ -206,10 +207,6 @@ int protoss_go_watch(uint32_t address, uint32_t mask) {
     
     memset(&dbg_state, 0, sizeof(dbg_state));
     
-    union dbgwcr dbgwcrN;
-    dbgwcrN.val = 0;
-    uint32_t dbgwvrN;
-
     dbg_state.wcr[0].z1 = 0;
     dbg_state.wcr[0].address_range_mask = mask_bits;
     dbg_state.wcr[0].z2 = 0;
@@ -224,25 +221,32 @@ int protoss_go_watch(uint32_t address, uint32_t mask) {
 
     dbg_state.wvr[0] = address;
     
-    dbg_state.bcr[0].z1 = 0;
-    dbg_state.bcr[0].address_range_mask = 0;
-    dbg_state.bcr[0].z2 = 0;
-    dbg_state.bcr[0].dbgbvr_match_or_mismatch = 1; // mismatch
-    dbg_state.bcr[0].dbgbvr_iva_or_context_id = 0; // IVA
-    dbg_state.bcr[0].dbgbvr_unlinked_or_linked = 0; // unlinked
-    dbg_state.bcr[0].linked_brp_num = 0;
-    dbg_state.bcr[0].security_state_control = 0; 
-    dbg_state.bcr[0].byte_address_select = 0xf;
-    dbg_state.bcr[0].z4 = 0;
-    dbg_state.bcr[0].privileged_mode_control = 0; // user, system, svc *but not* exception
-    dbg_state.bcr[0].breakpoint_enable = 0;
+    dbg_state.bcr[5].z1 = 0;
+    dbg_state.bcr[5].address_range_mask = 0;
+    dbg_state.bcr[5].z2 = 0;
+    dbg_state.bcr[5].dbgbvr_match_or_mismatch = 1; // mismatch
+    dbg_state.bcr[5].dbgbvr_iva_or_context_id = 0; // IVA
+    dbg_state.bcr[5].dbgbvr_unlinked_or_linked = 1; // linked
+    dbg_state.bcr[5].linked_brp_num = 4;
+    dbg_state.bcr[5].security_state_control = 0; 
+    dbg_state.bcr[5].byte_address_select = 0xf;
+    dbg_state.bcr[5].z4 = 0;
+    dbg_state.bcr[5].privileged_mode_control = 0; // user, system, svc *but not* exception
+    dbg_state.bcr[5].breakpoint_enable = 0;
     
-    dbg_state.bvr[0] = 0xdeadbeec;
-
-    twiddle_dbg(true);
+    dbg_state.bcr[4].z1 = 0;
+    dbg_state.bcr[4].address_range_mask = 0; // exact (but it's step-two for thumb :()
+    dbg_state.bcr[4].z2 = 0;
+    dbg_state.bcr[4].dbgbvr_match_or_mismatch = 0; // match
+    dbg_state.bcr[4].dbgbvr_iva_or_context_id = 1; // Context ID
+    dbg_state.bcr[4].dbgbvr_unlinked_or_linked = 1;
+    dbg_state.bcr[4].linked_brp_num = 5;
+    dbg_state.bcr[4].security_state_control = 0;
+    dbg_state.bcr[4].byte_address_select = 0xf;
+    dbg_state.bcr[4].z4 = 0;
+    dbg_state.bcr[4].privileged_mode_control = 0;
+    dbg_state.bcr[4].breakpoint_enable = 0;
     
-    disable_interrupts();
-
     data_saved = vector_base[4+8];
     vector_base[4+8] = (void *) watch_data_handler;
     prefetch_saved = vector_base[3+8];
@@ -254,8 +258,6 @@ int protoss_go_watch(uint32_t address, uint32_t mask) {
     thread_exception_return[13] = (uint32_t) &dbg_state;
     thread_exception_return[14] = 0xe1a00000; // nop
     flush_cache(thread_exception_return + 11, 16);
-
-    enable_interrupts();
 
     watch_going = true;
     
@@ -296,10 +298,8 @@ int protoss_go() {
     dbg_state.bcr[5].privileged_mode_control = 0; // user, system, svc *but not* exception
     dbg_state.bcr[5].breakpoint_enable = 1; // woo
     
-    dbg_state.bvr[5] = 0xdeadbeec; // asm will fill this in for single stepping
-    
     dbg_state.bcr[4].z1 = 0;
-    dbg_state.bcr[4].address_range_mask = 0; // exact (but it's step-two for thumb :()
+    dbg_state.bcr[4].address_range_mask = 0; // exact
     dbg_state.bcr[4].z2 = 0;
     dbg_state.bcr[4].dbgbvr_match_or_mismatch = 0; // match
     dbg_state.bcr[4].dbgbvr_iva_or_context_id = 1; // Context ID
@@ -313,24 +313,21 @@ int protoss_go() {
     
     // BVR <- current context ID
     asm("mrc p15, 0, %0, c13, c0, 1" :"=r"(dbg_state.bvr[4]) :);
-    
-    twiddle_dbg(true);
-    
-    disable_interrupts();
 
-    // We can't ever branch to 80xxxxxx, so overwrite it here
+    // We can't ever branch to 80xxxxxx, so overwrite the data
     prefetch_saved = vector_base[3+8];
     vector_base[3+8] = (void *) trace_prefetch_handler;
-
-    enable_interrupts();
     
     trace_going = true;
+    
+    twiddle_dbg(true);
     
     return 0;
 }
 
 void protoss_stop() {
-    old_ie = ml_set_interrupts_enabled(0);
+    disable_interrupts();
+
     if(trace_going || watch_going) {
         twiddle_dbg(false);
     }
@@ -356,7 +353,8 @@ void protoss_stop() {
 
     trace_going = false;
     watch_going = false;
-    ml_set_interrupts_enabled(old_ie);
+
+    enable_interrupts();
 }
 
 void protoss_unload() {

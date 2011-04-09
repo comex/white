@@ -1,10 +1,10 @@
 GCC ?= /Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/gcc-4.2 -arch armv7 -isysroot /Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS4.3.sdk/ -mapcs-frame -fomit-frame-pointer -mthumb 
-CFLAGS += -g3 -std=gnu99 -Os -I. -fno-builtin-printf -fno-builtin-memset -fno-builtin-memcpy -Wall -Wno-parentheses -Wno-pointer-to-int-cast
+CFLAGS += -g3 -std=gnu99 -Os -I. -fno-builtin-printf -fno-builtin-memset -fno-builtin-memcpy -Wall -Wno-parentheses -Wno-pointer-to-int-cast -Wreturn-type -DIMG3_SUPPORT -DWATCHPOINTS
 all: stuff white_loader kcode.dylib mem.dylib serialplease.dylib
 %.o: %.c kinc.h
-	$(GCC) $(CFLAGS) -c -o $@ $< -DIMG3_SUPPORT -Wreturn-type
+	$(GCC) $(CFLAGS) -c -o $@ $<
 %.o: %.S
-	$(GCC) $(CFLAGS) -c -o $@ $< -DIMG3_SUPPORT
+	$(GCC) $(CFLAGS) -c -o $@ $<
 stuff: stuff.c
 	$(GCC) $(CFLAGS) -o stuff stuff.c
 KCODE_OBJS = kcode.o black.o creep.o creepasm.o protoss.o protossasm.o failsafe.o

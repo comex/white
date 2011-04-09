@@ -174,9 +174,9 @@ static void dump_creep() {
 }
 
 struct trace_entry {
-    uint32_t r[13];
     uint32_t sp;
     uint32_t lr;
+    uint32_t r[13];
     uint32_t pc;
 } __attribute__((packed));
 
@@ -202,8 +202,9 @@ static void dump_protoss() {
 }
 
 struct watch_entry {
+    uint32_t sp;
+    uint32_t lr;
     uint32_t r[13];
-    //uint32_t lr;
     uint32_t pc;
     uint32_t accessed_address;
     uint32_t accessed_value;
