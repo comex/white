@@ -247,10 +247,10 @@ int protoss_go_watch(uint32_t address, uint32_t mask) {
     dbg_state.bcr[4].privileged_mode_control = 0;
     dbg_state.bcr[4].breakpoint_enable = 0;
     
-    data_saved = vector_base[4+8];
-    vector_base[4+8] = (void *) watch_data_handler;
     prefetch_saved = vector_base[3+8];
     vector_base[3+8] = (void *) watch_prefetch_handler;
+    data_saved = vector_base[4+8];
+    vector_base[4+8] = (void *) watch_data_handler;
 
     memcpy(ter_orig, thread_exception_return + 11, 16);
     thread_exception_return[11] = 0xe59f0000; // ldr r0, [pc]
@@ -260,6 +260,8 @@ int protoss_go_watch(uint32_t address, uint32_t mask) {
     flush_cache(thread_exception_return + 11, 16);
 
     watch_going = true;
+
+    twiddle_dbg(true);
     
     return 0;
 #else

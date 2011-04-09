@@ -95,24 +95,32 @@ _watch_prefetch_handler:
     cmp sp, #0x10
     ldreq pc, _prefetch_saved
 
-    str lr, saved_lr
+    strd r0, r1, saved_regs
 
-    ldr sp, _dbg_regs
-    ldr lr, c5acce55
-    str lr, [sp, #0xfb0]
-    ldr lr, [sp, #0x314] ;# do not remove
-
-    ;# disable the breakpoint
-    ldr lr, [sp, #0x140]
-    and lr, #0xfffffffe 
-    str lr, [sp, #0x140]
-
-    ;# enable the watchpoint
-    ldr lr, [sp, #0x1c0]
-    orr lr, #1
-    str lr, [sp, #0x1c0]
+    ldr r0, _dbg_regs
+    ldr r1, c5acce55
+    str r1, [r0, #0xfb0]
+    ldr r1, [r0, #0x314] ;# do not remove
     
-    ldr lr, saved_lr
+    ;# enable the watchpoint
+    ldr r1, [r0, #0x1c0]
+    orr r1, #1
+    str r1, [r0, #0x1c0]
+    
+    ;# disable the breakpoint
+    ldr r1, [r0, #0x154]
+    bic r1, #1
+    str r1, [r0, #0x154]
+    
+    ldr r1, [r0, #0x150]
+    bic r1, #1
+    str r1, [r0, #0x150]
+
+    ldrd r0, r1, saved_regs
+    
+    mov sp, #0
+    str sp, loque
+
     subs pc, lr, #4
 
 .globl _watch_data_handler
@@ -153,9 +161,9 @@ bpstuff:
 
     ;# disable the watchpoint
     ldr r1, [r0, #0x1c0]
-    bic lr, #1
+    bic r1, #1
     str r1, [r0, #0x1c0]
-
+    
     ldr sp, _watch_ptr
     ldr r1, [sp]
     cmp r1, #0
@@ -168,7 +176,8 @@ bpstuff:
     cpsid aif, #0x17
 
     stmia sp!, {r0-r1}
-    ldrd r0, r1, saved_regs
+    adr r0, saved_regs
+    ldrd r0, r1, [r0]
     stmia sp!, {r0-r12, lr}
 
     # accessed_address
@@ -206,6 +215,9 @@ bpstuff:
     orr r1, sp
     orr r1, #1
     str r1, [r0, #0x154]
+    
+    mrc p15, 0, r1, c13, c0, 1
+    str r1, [r0, #0x110]
 
     ldr r1, [r0, #0x150]
     orr r1, #1
@@ -213,15 +225,13 @@ bpstuff:
 # done
     
 fin2:
-    mov r0, #0
-    str r0, loque
-
-    ldrd r0, r1, saved_regs
+    adr r0, saved_regs
+    ldrd r0, r1, [r0]
     movs pc, lr
 #endif
 
 
-.globl _trace_ptr, _prefetch_saved, _data_saved, _dbg_regs
+.globl _trace_ptr, _watch_ptr, _prefetch_saved, _data_saved, _dbg_regs
 _trace_ptr: .long 0
 _watch_ptr: .long 0
 _prefetch_saved: .long 0

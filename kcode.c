@@ -249,7 +249,6 @@ struct regs {
 
 int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
 {
-    IOLog("%p called me\n", __builtin_return_address(1));
     switch(uap->mode) {
     case 0: { // get regs
         struct regs regs;
@@ -268,6 +267,9 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         asm("mrc p14, 0, %0, c0, c1, 0" : "=r"(regs.dbgdscr));
         asm("mrc p15, 0, %0, c13, c0, 4" : "=r"(regs.tpidrprw));
         asm("mrc p15, 0, %0, c3, c0, 0" : "=r"(regs.dacr));
+        *((volatile int *) 0x80001000);
+        *((volatile int *) 0x80001000);
+        *((volatile int *) 0x80001000);
         int error;
         if(error = copyout(&regs, (user_addr_t) uap->b, sizeof(regs))) return error;
         *retval = 0;
