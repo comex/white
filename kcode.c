@@ -68,6 +68,12 @@ static void noreturn_hook(uint32_t regs[14], uint32_t pc) {
     IOLog("[%d] @%x hook: r0=0x%x r1=0x%x r2=0x%x r3=0x%x r4=0x%x r5=0x%x r6=0x%x r7=0x%x r8=0x%x r9=0x%x r10=0x%x r11=0x%x r12=0x%x sp=%p lr=0x%x\n", proc_pid(current_proc()), pc, regs[0], regs[1], regs[2], regs[3], regs[4], regs[5], regs[6], regs[7], regs[8], regs[9], regs[10], regs[11], regs[12], regs + 14, regs[13]);
 }
 
+static void delay_hook(uint32_t regs[14], uint32_t pc) {
+    IOLog("(delaying)\n");
+    IOSleep(10000);
+    IOLog("(done)\n");
+}
+
 static void *logger_hook(void *old, struct apply_args *args) {
     __builtin_return(generic_hook(false, old, args));
 }
@@ -290,6 +296,9 @@ int mysyscall(void *p, struct mysyscall_args *uap, int32_t *retval)
         break;
     case 8: // noreturn
         *retval = add_hook((void *) uap->b, noreturn_hook, 2);
+        break;
+    case 12: // delay
+        *retval = add_hook((void *) uap->b, delay_hook, 2);
         break;
     case 9: // hook weird
         *retval = add_hook((void *) uap->b, weird_hook, uap->c);

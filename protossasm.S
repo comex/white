@@ -186,7 +186,7 @@ bpstuff:
     stmia sp!, {r0}
 
     # accessed_value 
-    ldr r0, [r0]
+    #ldr r0, [r0]
 
     # was_store
     mrc p15, 0, r1, c5, c0, 0

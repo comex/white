@@ -316,6 +316,7 @@ int main(int argc, char **argv) {
         {"do-something", no_argument, 0, 138},
         {"time", no_argument, 0, 139},
         {"ticks", required_argument, 0, 141},
+        {"delay", required_argument, 0, 143},
         {0, 0, 0, 0}
     };
     int idx;
@@ -374,6 +375,9 @@ int main(int argc, char **argv) {
             break;
         case 142:
             assert(!syscall(8, 8, parse_hex(optarg), hook_force));
+            break;
+        case 143:
+            assert(!syscall(8, 12, parse_hex(optarg), hook_force));
             break;
         case 132:
             assert(!syscall(8, 9, parse_hex(optarg), hook_force));
