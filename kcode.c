@@ -24,7 +24,8 @@ struct frame {
 
 static void get_return_addresses(struct frame *frame, void **returns, int n) {
     while(n--) {
-        if(!frame || frame == (void *) 0xffffffff) {
+        uint32_t f = (uint32_t) frame;
+        if(f == 0xffffffff || f < 0x80000000) {
             *returns++ = (void *) 0xeeeeeeee;
         } else {
             *returns++ = frame->lr;
@@ -42,7 +43,7 @@ static void *generic_hook(bool should_trace, void *old, struct apply_args *args)
         protoss_stop();
     }
     void *returns[6];
-    get_return_addresses(args->r7, returns, 6);
+    get_return_addresses((struct frame *) &args->r7, returns, 6);
     IOLog("hook%s: from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p pid=%d\n",
         should_trace ? " (traced)" : "",
         returns[0], returns[1], returns[2], returns[3], returns[4], returns[5],
@@ -86,9 +87,30 @@ static void *tracer_hook(void *old, struct apply_args *args) {
     __builtin_return(result);
 }
 
+static void foo(const char *label, void *old, uint32_t *p) {
+    //IOLog("in (%p): %x %x %x %x %x .. %x\n", p, p[0], p[1], p[2], p[3], p[4], *((uint32_t *) p[4]));
+    IOLog("%p:%s (%p):", old, label, p);
+    if(p) {
+        IOLog(" %x %x %x %x %x", p[0], p[1], p[2], p[3], p[4]);
+        if(p[1]) {
+            IOLog(" .. %x", *((uint32_t *) p[1]));
+        }
+    }
+    IOLog("\n");
+}
+
 static void *weird_hook(void *old, struct apply_args *args) {
-    //IOLog("weird_hook: %d: %p, %p, %p, %p\n", args->sp[12], args->sp[0], args->sp[1], args->sp[2], args->sp[3]); 
-    __builtin_return(__builtin_apply(old, args, 60));
+    /*uint32_t *p = ((uint32_t *) current_thread() + 0x1fc/4);
+    int pid = proc_pid(current_proc());
+    char name[128];
+    proc_name(pid, name, sizeof(name));
+    IOLog("[%d %s] saved R0=%x R1=%x R2=%x R3=%x R4=%x R5=%x R6=%x R7=%x R8=%x R9=%x R10=%x R11=%x R12=%x SP=%x LR=%x PC=%x CPSR=%x\n", pid, name, p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15], p[16]);*/
+    //__builtin_return(generic_hook(false, old, args));
+    uint32_t *p = (uint32_t *) args->r0;
+    foo("in", old, p);
+    void *result = __builtin_apply(old, args, 32);
+    foo("out", old, p);
+    __builtin_return(result);
 }
 
 static int ioreg(uint32_t type, user_addr_t path) {

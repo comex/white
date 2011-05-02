@@ -73,8 +73,7 @@ struct trace_entry {
     uint32_t pc;
 } __attribute__((packed));
 
-static struct trace_entry *trace_start;
-extern struct trace_entry *trace_ptr;
+extern struct trace_entry *trace_start, *trace_ptr, *trace_end;
 
 #ifdef WATCHPOINTS
 struct watch_entry {
@@ -280,9 +279,11 @@ int protoss_go() {
         return -1;
     }
     
-    if(!trace_start) trace_start = IOMalloc(NUM_TRACE_ENTRIES * sizeof(struct trace_entry));
-    memset(trace_start, 0, (NUM_TRACE_ENTRIES - 1) * sizeof(struct trace_entry));
-    memset(&trace_start[NUM_TRACE_ENTRIES - 1], 0xff, sizeof(struct trace_entry));
+    if(!trace_start) {
+        trace_start = IOMalloc(NUM_TRACE_ENTRIES * sizeof(struct trace_entry));
+        trace_end = trace_start + NUM_TRACE_ENTRIES;
+    }
+    memset(trace_start, 0, NUM_TRACE_ENTRIES * sizeof(struct trace_entry));
     trace_ptr = &trace_start[1];
 
     memset(&dbg_state, 0, sizeof(dbg_state));
@@ -384,14 +385,17 @@ void protoss_unload() {
 int protoss_get_records(int type, user_addr_t buf, uint32_t bufsize) {
     size_t size;
     const void *ptr;
+    int cur_count;
     switch(type) {
     case 0:
         ptr = trace_start;
+        cur_count = trace_ptr - trace_start;
         size = NUM_TRACE_ENTRIES * sizeof(struct trace_entry);
         break;
 #ifdef WATCHPOINTS
     case 1:
         ptr = watch_start;
+        cur_count = watch_ptr - watch_start;
         size = NUM_WATCH_ENTRIES * sizeof(struct watch_entry);
         break;
 #endif
@@ -399,6 +403,7 @@ int protoss_get_records(int type, user_addr_t buf, uint32_t bufsize) {
         return -1;
     }
     if(!ptr) return -1;
+    IOLog("cur_count = %d\n", cur_count);
     if(size > bufsize) size = bufsize;
     return copyout(ptr, buf, size);
 }

@@ -29,9 +29,13 @@ _trace_prefetch_handler:
     str r1, [r0, #0x154]
 
     ldr sp, _trace_ptr
-    ldr r1, [sp]
-    cmp r1, #0
-    bne fin1 ;# out of space
+    ldr r0, _trace_end
+    cmp sp, r0
+#ifdef CIRCULAR
+    ldreq sp, _trace_start
+#else
+    beq fin1 ;# out of space
+#endif
 
     ldr r1, [sp, #-4]
     cmp r1, lr
@@ -95,6 +99,16 @@ _watch_prefetch_handler:
     cmp sp, #0x10
     ldreq pc, _prefetch_saved
 
+loque_loop:
+    adr sp, loque
+    ldrex sp, [sp]
+    cmp sp, #0
+    bne loque_loop
+    adr sp, loque
+    .long 0xe18ddf9d ;# strex sp, sp, [sp]
+    cmp sp, #0
+    bne loque_loop
+
     strd r0, r1, saved_regs
 
     ldr r0, _dbg_regs
@@ -139,7 +153,7 @@ _watch_data_handler:
     cmp sp, #0x10
     ldreq pc, _data_saved
 
-loque_loop:
+loque_loop_1:
     adr sp, loque
     ldrex sp, [sp]
     cmp sp, #0
@@ -147,7 +161,7 @@ loque_loop:
     adr sp, loque
     .long 0xe18ddf9d ;# strex sp, sp, [sp]
     cmp sp, #0
-    bne loque_loop
+    bne loque_loop_1
 
     sub lr, #8
 
@@ -186,7 +200,7 @@ bpstuff:
     stmia sp!, {r0}
 
     # accessed_value 
-    #ldr r0, [r0]
+    ldr r0, [r0]
 
     # was_store
     mrc p15, 0, r1, c5, c0, 0
@@ -227,12 +241,20 @@ bpstuff:
 fin2:
     adr r0, saved_regs
     ldrd r0, r1, [r0]
+
+    mov sp, #0
+    str sp, loque
+
     movs pc, lr
 #endif
 
 
-.globl _trace_ptr, _watch_ptr, _prefetch_saved, _data_saved, _dbg_regs
+.globl _trace_ptr, _trace_start, _trace_end
+_trace_start: .long 0
 _trace_ptr: .long 0
+_trace_end: .long 0
+
+.globl _watch_ptr, _prefetch_saved, _data_saved, _dbg_regs
 _watch_ptr: .long 0
 _prefetch_saved: .long 0
 _data_saved: .long 0

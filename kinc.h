@@ -129,6 +129,8 @@ LC struct proc *proc_find(int pid);
 
 LC int proc_pid(struct proc *proc);
 
+LC void proc_name(int pid, char *buf, size_t size);
+
 LC struct proc *current_proc();
 
 LC task_t current_task();
