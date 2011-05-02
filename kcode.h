@@ -1,3 +1,4 @@
+#define unused __attribute__((unused))
 // black.c
 void *hook(void *addr, void *replacement, int mode, void *tag);
 void *unhook(void *stub);
