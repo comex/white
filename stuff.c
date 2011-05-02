@@ -222,6 +222,7 @@ static void dump_watch() {
             for(int r = 0; r <= 12; r++)  {
                 printf(" R%d=%08x", r, buf[i].r[r]);
             }
+            printf(" SP=%08x LR=%08x\n", buf[i].sp, buf[i].lr);
             printf("\n");
         }
     }

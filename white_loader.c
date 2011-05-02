@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <mach/mach.h>
 #include <data/common.h>
 #include <data/binary.h>
 #include <data/find.h>
@@ -21,9 +22,49 @@ static addr_t find_hack_func(const struct binary *binary) {
     return b_sym(binary, "_IOFindBSDRoot", true, true); 
 }
 
+static addr_t lookup_sym(const struct binary *binary, const char *sym);
+
+static void insert_loader_stuff(struct binary *binary, const struct binary *kern) {
+    bool four_dot_three = b_sym(kern, "_vfs_getattr", false, false);
+    addr_t patch_loc = b_read32(kern, b_sym(kern, "_kernel_pmap", false, true)) + (four_dot_three ? 0x424 : 0x420);
+    addr_t sysent = lookup_sym(kern, "_sysent");
+    
+    CMD_ITERATE(binary->mach_hdr, cmd) {
+        if(cmd->cmd == LC_ID_DYLIB) {
+            struct dylib_command *d = (void *) cmd;
+            d->dylib.timestamp = 0xdeadbeef;
+            d->dylib.current_version = patch_loc;
+            d->dylib.compatibility_version = sysent;
+            return;
+        }
+    }
+
+    die("dylib does not have a LC_ID_DYLIB to stick stuff into");
+}
+            
+// apply the patch, and return the value of sysent
+static addr_t apply_loader_stuff(const struct binary *binary) {
+    CMD_ITERATE(binary->mach_hdr, cmd) {
+        if(cmd->cmd == LC_ID_DYLIB) {
+            const struct dylib_command *d = (void *) cmd;
+            if(d->dylib.timestamp != 0xdeadbeef) {
+                die("dylib does not have loader stuff stuck into it");
+            }
+
+            vm_address_t patch_loc = d->dylib.current_version;
+            printf("patching %x\n", (int) patch_loc);
+            uint32_t zero = 0;
+            assert(!vm_write(get_kernel_task(), patch_loc, (vm_offset_t) &zero, sizeof(zero)));
+
+            return d->dylib.compatibility_version;
+        }
+    }
+
+    die("dylib does not have loader stuff stuck into it");
+}
 
 // gigantic hack
-static uint32_t lookup_sym(const struct binary *binary, const char *sym) {
+static addr_t lookup_sym(const struct binary *binary, const char *sym) {
     if(!strcmp(sym, "_sysent")) {
         return find_int32(b_macho_segrange(binary, "__DATA"), 0x861000, true) + 4;
     }
@@ -46,6 +87,18 @@ static uint32_t lookup_sym(const struct binary *binary, const char *sym) {
         uint32_t result = find_data(b_macho_segrange(binary, "__TEXT"), to_find, 0, false);
         free(to_find);
         return result;
+    }
+
+    if(sym[0] == '$' && sym[1] == 'b' && sym[2] == 'l' && sym[4] == '_') {
+        uint32_t func = b_sym(binary, sym + 5, true, true);
+        range_t range = (range_t) {binary, func, 0x1000};
+        int number = sym[3] - '0';
+        uint32_t bl = 0;
+        while(number--) bl = find_bl(&range);
+        if(!bl) {
+            die("no bl for %s", sym);
+        }
+        return bl;
     }
     
     // $vt_<name> -> find offset to me from the corresponding vtable 
@@ -106,17 +159,19 @@ int main(int argc, char **argv) {
 #endif
 #ifdef __APPLE__
         case 'l': {
-            if(!kern.valid) goto usage;
-            b_prepare_running_kernel(&kern);
-            uint32_t sysent = lookup_sym(&kern, "_sysent");
             if(!*argv) goto usage;
             char *to_load_fn;
             while(to_load_fn = *argv++) {
                 struct binary to_load;
                 b_init(&to_load);
                 b_load_macho(&to_load, to_load_fn, true);
+                if(!(to_load.mach_hdr->flags & MH_PREBOUND)) {
+                    insert_loader_stuff(&to_load, &kern);
+                }
+                addr_t sysent = apply_loader_stuff(&to_load);
                 uint32_t slide = b_allocate_from_running_kernel(&to_load);
                 if(!(to_load.mach_hdr->flags & MH_PREBOUND)) {
+                    if(!kern.valid) goto usage;
                     b_relocate(&to_load, &kern, lookup_sym, slide);
                 }
                 b_inject_into_running_kernel(&to_load, sysent);
@@ -135,7 +190,9 @@ int main(int argc, char **argv) {
                 b_init(&to_load);
                 b_load_macho(&to_load, to_load_fn, true);
                 if(!(to_load.mach_hdr->flags & MH_PREBOUND)) {
+                    if(!kern.valid) goto usage;
                     b_relocate(&to_load, &kern, lookup_sym, slide);
+                    insert_loader_stuff(&to_load, &kern);
                     slide += 0x10000;
                 }
                 to_load.mach_hdr->flags |= MH_PREBOUND;
