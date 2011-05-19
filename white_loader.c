@@ -140,6 +140,7 @@ int main(int argc, char **argv) {
         if(!arg) goto usage;
         if(arg[0] != '-' || arg[1] == '\0' || arg[2] != '\0') goto usage;
         switch(arg[1]) {
+#ifndef MINIMAL
         case 'k': {
             char *kern_fn;
             if(!(kern_fn = *argv++)) goto usage;
@@ -155,28 +156,6 @@ int main(int argc, char **argv) {
             prange_t decompressed = decrypt_and_decompress(key_bits, key, iv, data);
             b_prange_load_macho(&kern, decompressed, false);
             break;
-        }
-#endif
-#ifdef __APPLE__
-        case 'l': {
-            if(!*argv) goto usage;
-            char *to_load_fn;
-            while(to_load_fn = *argv++) {
-                struct binary to_load;
-                b_init(&to_load);
-                b_load_macho(&to_load, to_load_fn, true);
-                if(!(to_load.mach_hdr->flags & MH_PREBOUND)) {
-                    insert_loader_stuff(&to_load, &kern);
-                }
-                addr_t sysent = apply_loader_stuff(&to_load);
-                uint32_t slide = b_allocate_from_running_kernel(&to_load);
-                if(!(to_load.mach_hdr->flags & MH_PREBOUND)) {
-                    if(!kern.valid) goto usage;
-                    b_relocate(&to_load, &kern, lookup_sym, slide);
-                }
-                b_inject_into_running_kernel(&to_load, sysent);
-            }
-            return 0;
         }
 #endif
         case 'p': {
@@ -226,7 +205,28 @@ int main(int argc, char **argv) {
 
             return 0;
         }
+#endif
 #ifdef __APPLE__
+        case 'l': {
+            if(!*argv) goto usage;
+            char *to_load_fn;
+            while(to_load_fn = *argv++) {
+                struct binary to_load;
+                b_init(&to_load);
+                b_load_macho(&to_load, to_load_fn, true);
+                if(!(to_load.mach_hdr->flags & MH_PREBOUND)) {
+                    insert_loader_stuff(&to_load, &kern);
+                }
+                addr_t sysent = apply_loader_stuff(&to_load);
+                uint32_t slide = b_allocate_from_running_kernel(&to_load);
+                if(!(to_load.mach_hdr->flags & MH_PREBOUND)) {
+                    if(!kern.valid) goto usage;
+                    b_relocate(&to_load, &kern, lookup_sym, slide);
+                }
+                b_inject_into_running_kernel(&to_load, sysent);
+            }
+            return 0;
+        }
         case 'u': {
             char *baseaddr_hex;
             if(!(baseaddr_hex = *argv++)) goto usage;
