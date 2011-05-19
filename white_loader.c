@@ -19,14 +19,14 @@
 static struct binary kern;
 
 static addr_t find_hack_func(const struct binary *binary) {
-    return b_sym(binary, "_IOFindBSDRoot", true, true); 
+    return b_sym(binary, "_IOFindBSDRoot", MUST_FIND | TO_EXECUTE);
 }
 
 static addr_t lookup_sym(const struct binary *binary, const char *sym);
 
 static void insert_loader_stuff(struct binary *binary, const struct binary *kern) {
-    bool four_dot_three = b_sym(kern, "_vfs_getattr", false, false);
-    addr_t patch_loc = b_read32(kern, b_sym(kern, "_kernel_pmap", false, true)) + (four_dot_three ? 0x424 : 0x420);
+    bool four_dot_three = b_sym(kern, "_vfs_getattr", 0);
+    addr_t patch_loc = b_read32(kern, b_sym(kern, "_kernel_pmap", MUST_FIND)) + (four_dot_three ? 0x424 : 0x420);
     addr_t sysent = lookup_sym(kern, "_sysent");
     
     CMD_ITERATE(binary->mach_hdr, cmd) {
@@ -70,7 +70,7 @@ static addr_t lookup_sym(const struct binary *binary, const char *sym) {
     }
 
     // $t_XX_XX -> find "+ XX XX" in TEXT
-    if(sym[0] == '$' && ((sym[1] == 't' && sym[2] == '_') || sym[1] == '_')) {
+    if(!memcmp(sym, "$_", 2) || !memcmp(sym, "$t_", 3)) {
         // lol...
         char *to_find = malloc(strlen(sym)+1);
         char *p = to_find;
@@ -84,13 +84,13 @@ static addr_t lookup_sym(const struct binary *binary, const char *sym) {
             *p++ = c;
             if(!c) break;
         }
-        uint32_t result = find_data(b_macho_segrange(binary, "__TEXT"), to_find, 0, false);
+        uint32_t result = find_data(b_macho_segrange(binary, "__TEXT"), to_find, 0, 0);
         free(to_find);
         return result;
     }
 
-    if(sym[0] == '$' && sym[1] == 'b' && sym[2] == 'l' && sym[4] == '_') {
-        uint32_t func = b_sym(binary, sym + 5, true, true);
+    if(!memcmp(sym, "$bl", 3) && sym[4] == '_') {
+        uint32_t func = b_sym(binary, sym + 5, MUST_FIND | TO_EXECUTE);
         range_t range = (range_t) {binary, func, 0x1000};
         int number = sym[3] - '0';
         uint32_t bl = 0;
@@ -100,7 +100,7 @@ static addr_t lookup_sym(const struct binary *binary, const char *sym) {
         }
         return bl;
     }
-    
+
     // $vt_<name> -> find offset to me from the corresponding vtable 
     // ex: __ZN11OSMetaClass20getMetaClassWithNameEPK8OSSymbol
     if(!strncmp(sym, "$vt_", 4)) {
@@ -118,7 +118,7 @@ static addr_t lookup_sym(const struct binary *binary, const char *sym) {
         memcpy(vt_name + 5, sym, len);
         vt_name[len + 5] = 0;
         
-        uint32_t vtable = b_sym(binary, vt_name, true, false);
+        uint32_t vtable = b_sym(binary, vt_name, TO_EXECUTE);
         if(!vtable) return 0;
         uint32_t loc_in_vtable = find_int32((range_t) {binary, vtable, 0x1000}, the_func, true);
 
@@ -128,7 +128,7 @@ static addr_t lookup_sym(const struct binary *binary, const char *sym) {
         return diff;
     }
 
-    return b_sym(binary, sym, true, false);
+    return b_sym(binary, sym, TO_EXECUTE);
 }
 
 int main(int argc, char **argv) {
