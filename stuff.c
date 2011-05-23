@@ -35,6 +35,7 @@ int poke_mem(uint32_t kaddr, void *uaddr, uint32_t size, bool write, bool phys) 
     return syscall(8, 1, kaddr, uaddr, size, write, phys);
 }
 
+__attribute__((unused))
 static uint32_t read32(uint32_t kaddr) {
     uint32_t result;
     assert(!poke_mem(kaddr, &result, sizeof(result), false, false));
@@ -95,7 +96,7 @@ static const char *ap(uint32_t ap) {
 static void dump_pagetable(uint32_t ttbr, uint32_t baseaddr, uint32_t size) {
     unsigned int *data = malloc(size);
     assert(!poke_mem(ttbr & ~0x3f, data, size, false, true));
-    for(int i = 0; i < (size / 4); i++) {
+    for(uint32_t i = 0; i < (size / 4); i++) {
         unsigned int l1desc = data[i];
         if((l1desc & 3) == 0) continue; // fault
         printf("%08x: ", baseaddr + i * 0x100000);
@@ -185,9 +186,9 @@ static void dump_protoss() {
     struct trace_entry *buf = malloc(size);
     memset(buf, 0, size);
     assert(!syscall(8, 14, 0, buf, size));
-    for(int i = 1; i < ((size - 1) / sizeof(struct trace_entry)); i++) {
+    for(size_t i = 1; i < ((size - 1) / sizeof(struct trace_entry)); i++) {
         if(buf[i].pc) {
-            printf("%.5d %08x", i, buf[i].pc);
+            printf("%.5zd %08x", i, buf[i].pc);
             for(int r = 0; r < 12; r++)  {
                 if(buf[i].r[r] != buf[i-1].r[r]) {
                     printf(" R%d=%08x", r, buf[i].r[r]);
@@ -216,9 +217,9 @@ static void dump_watch() {
     struct watch_entry *buf = malloc(size);
     memset(buf, 0, size);
     assert(!syscall(8, 14, 1, buf, size));
-    for(int i = 0; i < ((size - 1) / sizeof(struct watch_entry)); i++) {
+    for(size_t i = 0; i < ((size - 1) / sizeof(struct watch_entry)); i++) {
         if(buf[i].accessed_address) {
-            printf("%.5d %08x %s%08x] <- %08x", i, buf[i].accessed_address, buf[i].was_store ? "STORE [was " : "LOAD [", buf[i].accessed_value, buf[i].pc);
+            printf("%.5zd %08x %s%08x] <- %08x", i, buf[i].accessed_address, buf[i].was_store ? "STORE [was " : "LOAD [", buf[i].accessed_value, buf[i].pc);
             for(int r = 0; r <= 12; r++)  {
                 printf(" R%d=%08x", r, buf[i].r[r]);
             }
