@@ -3,7 +3,9 @@
 
 static void *hook_tag;
 
+#ifndef NO_TRACER
 static int tracer_ticks;
+#endif
 static lck_grp_t *lck_grp;
 static lck_mtx_t *tracer_lck;
 
@@ -79,6 +81,7 @@ static void *logger_hook(void *old, struct apply_args *args) {
     __builtin_return(generic_hook(false, old, args));
 }
 
+#ifndef NO_TRACER
 static void *tracer_hook(void *old, struct apply_args *args) {
     lck_mtx_lock(tracer_lck);
     bool should_trace = !tracer_ticks--;
@@ -86,6 +89,7 @@ static void *tracer_hook(void *old, struct apply_args *args) {
     lck_mtx_unlock(tracer_lck);
     __builtin_return(result);
 }
+#endif
 
 static void foo(const char *label, void *old, uint32_t *p) {
     //IOLog("in (%p): %x %x %x %x %x .. %x\n", p, p[0], p[1], p[2], p[3], p[4], *((uint32_t *) p[4]));
@@ -211,9 +215,8 @@ static int add_hook(void *addr, void *replacement, int mode) {
 
 
 int do_something() {
-    uint32_t time, microtime;
-    clock_get_system_microtime(&time, &microtime);
-    IOLog("sec=%u usec=%u\n", time, microtime);
+    LC int serial_getc();
+    return serial_getc();
     return 0;
 }
 
@@ -347,10 +350,12 @@ int mysyscall(unused void *p, struct mysyscall_args *uap, int32_t *retval)
     case 17:
         Debugger("Debugger() from kcode");
         break;
+#ifndef NO_TRACER
     case 20: // tracer
         tracer_ticks = uap->d;
         *retval = add_hook((void *) uap->b, tracer_hook, uap->c);
         break;
+#endif
     case 21:
         *retval = lookup_metaclass(uap->b);
         break;

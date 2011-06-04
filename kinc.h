@@ -65,7 +65,8 @@ extern uint32_t *kernel_pmap;
 
 LC void *memset(void *b, int c, size_t len);
 
-LC void *memcpy(void *restrict s1, const void *restrict s2, size_t len);
+#define memcpy memmove
+LC void *memmove(void *restrict s1, const void *restrict s2, size_t len);
 
 LC void invalidate_icache(vm_offset_t addr, unsigned cnt, bool phys);
 

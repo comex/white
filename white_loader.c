@@ -7,13 +7,12 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <mach/mach.h>
-#include <data/common.h>
-#include <data/binary.h>
+#include <data/mach-o/binary.h>
 #include <data/find.h>
 #include <data/cc.h>
 #include <data/running_kernel.h>
-#include <data/loader.h>
-#include <data/link.h>
+#include <data/mach-o/headers/loader.h>
+#include <data/mach-o/link.h>
 #include <ctype.h>
 
 static struct binary kern;
@@ -29,7 +28,7 @@ static void insert_loader_stuff(struct binary *binary, const struct binary *kern
     addr_t patch_loc = b_read32(kern, b_sym(kern, "_kernel_pmap", MUST_FIND)) + (four_dot_three ? 0x424 : 0x420);
     addr_t sysent = lookup_sym(kern, "_sysent");
     
-    CMD_ITERATE(binary->mach_hdr, cmd) {
+    CMD_ITERATE(binary->mach->hdr, cmd) {
         if(cmd->cmd == LC_ID_DYLIB) {
             struct dylib_command *d = (void *) cmd;
             d->dylib.timestamp = 0xdeadbeef;
@@ -44,7 +43,7 @@ static void insert_loader_stuff(struct binary *binary, const struct binary *kern
             
 // apply the patch, and return the value of sysent
 static addr_t apply_loader_stuff(const struct binary *binary) {
-    CMD_ITERATE(binary->mach_hdr, cmd) {
+    CMD_ITERATE(binary->mach->hdr, cmd) {
         if(cmd->cmd == LC_ID_DYLIB) {
             const struct dylib_command *d = (void *) cmd;
             if(d->dylib.timestamp != 0xdeadbeef) {
@@ -70,7 +69,7 @@ static addr_t lookup_sym(const struct binary *binary, const char *sym) {
     }
 
     // $t_XX_XX -> find "+ XX XX" in TEXT
-    if(!memcmp(sym, "$_", 2) || !memcmp(sym, "$t_", 3)) {
+    if(!strncmp(sym, "$_", 2) || !strncmp(sym, "$t_", 3)) {
         // lol...
         char *to_find = malloc(strlen(sym)+1);
         char *p = to_find;
@@ -89,7 +88,7 @@ static addr_t lookup_sym(const struct binary *binary, const char *sym) {
         return result;
     }
 
-    if(!memcmp(sym, "$bl", 3) && sym[4] == '_') {
+    if(!strncmp(sym, "$bl", 3) && sym[4] == '_') {
         uint32_t func = b_sym(binary, sym + 5, MUST_FIND | TO_EXECUTE);
         range_t range = (range_t) {binary, func, 0x1000};
         int number = sym[3] - '0';
@@ -144,17 +143,18 @@ int main(int argc, char **argv) {
         case 'k': {
             char *kern_fn;
             if(!(kern_fn = *argv++)) goto usage;
-            b_load_macho(&kern, kern_fn, false);
+            b_load_macho(&kern, kern_fn);
             break;
         }
 #ifdef IMG3_SUPPORT
         case 'i': {
             uint32_t key_bits;
-            prange_t data = parse_img3_file(*argv++, &key_bits);
+            char *kern_fn;
+            prange_t data = parse_img3_file(kern_fn = *argv++, &key_bits);
             prange_t key = parse_hex_string(*argv++);
             prange_t iv = parse_hex_string(*argv++);
             prange_t decompressed = decrypt_and_decompress(key_bits, key, iv, data);
-            b_prange_load_macho(&kern, decompressed, false);
+            b_prange_load_macho(&kern, decompressed, 0, kern_fn);
             break;
         }
 #endif
@@ -167,14 +167,14 @@ int main(int argc, char **argv) {
                 if(!(output_fn = *argv++)) goto usage;
                 struct binary to_load;
                 b_init(&to_load);
-                b_load_macho(&to_load, to_load_fn, true);
-                if(!(to_load.mach_hdr->flags & MH_PREBOUND)) {
+                b_load_macho(&to_load, to_load_fn);
+                if(!(to_load.mach->hdr->flags & MH_PREBOUND)) {
                     if(!kern.valid) goto usage;
                     b_relocate(&to_load, &kern, lookup_sym, slide);
                     insert_loader_stuff(&to_load, &kern);
                     slide += 0x10000;
                 }
-                to_load.mach_hdr->flags |= MH_PREBOUND;
+                to_load.mach->hdr->flags |= MH_PREBOUND;
                 b_macho_store(&to_load, output_fn);
             }
             return 0;
@@ -195,8 +195,8 @@ int main(int argc, char **argv) {
             while(to_load_fn = *argv++) {
                 struct binary to_load;
                 b_init(&to_load);
-                b_load_macho(&to_load, to_load_fn, true);
-                if(!(to_load.mach_hdr->flags & MH_PREBOUND)) {
+                b_load_macho(&to_load, to_load_fn);
+                if(!(to_load.mach->hdr->flags & MH_PREBOUND)) {
                     b_relocate(&to_load, &kern, lookup_sym, b_allocate_from_macho_fd(fd));
                 }
                 b_inject_into_macho_fd(&to_load, fd, find_hack_func);
@@ -213,13 +213,13 @@ int main(int argc, char **argv) {
             while(to_load_fn = *argv++) {
                 struct binary to_load;
                 b_init(&to_load);
-                b_load_macho(&to_load, to_load_fn, true);
-                if(!(to_load.mach_hdr->flags & MH_PREBOUND)) {
+                b_load_macho(&to_load, to_load_fn);
+                if(!(to_load.mach->hdr->flags & MH_PREBOUND)) {
                     insert_loader_stuff(&to_load, &kern);
                 }
                 addr_t sysent = apply_loader_stuff(&to_load);
                 uint32_t slide = b_allocate_from_running_kernel(&to_load);
-                if(!(to_load.mach_hdr->flags & MH_PREBOUND)) {
+                if(!(to_load.mach->hdr->flags & MH_PREBOUND)) {
                     if(!kern.valid) goto usage;
                     b_relocate(&to_load, &kern, lookup_sym, slide);
                 }
