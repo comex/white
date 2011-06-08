@@ -1,4 +1,4 @@
-__attribute__((long_call)) extern int switch_to_serial_console() asm("$t_02_4a_00_23_10_68_13_60_70_47");
+__attribute__((long_call)) extern int switch_to_serial_console() asm("$_T_02_4a_00_23_10_68_13_60_70_47");
 __attribute__((long_call)) extern int serial_init();
 // may not be necessary
 __attribute__((long_call)) extern void conslog_putc(char);

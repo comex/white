@@ -90,7 +90,7 @@ LC int copyinstr(const user_addr_t uaddr, void *kaddr, size_t len, size_t *done)
 LC int copyoutstr(const void *kaddr, user_addr_t uaddr, size_t len, size_t *done);
 
 LC vm_map_t vm_map_switch(vm_map_t map)
-asm("$t_f0_b5_03_af_05_46_1d_ee_90_4f_d4_f8");
+asm("$_T_f0_b5_03_af_05_46_1d_ee_90_4f_d4_f8");
 
 LC void vm_map_deallocate(vm_map_t map);
 

@@ -62,30 +62,39 @@ static addr_t apply_loader_stuff(const struct binary *binary) {
     die("dylib does not have loader stuff stuck into it");
 }
 
+static addr_t find_data_munged(range_t range, const char *to_find, int align, int options) {
+    autofree char *buf = strdup(to_find);
+    for(char *p = buf; *p; p++) {
+        switch(*p) {
+            case '_': *p = ' '; break;
+            case 'X': *p = '.'; break;
+            case 'A': *p = '-'; break;
+            case 'T': *p = '+'; break;
+        }
+    }
+    return find_data(range, buf, align, options);
+}
+
 // gigantic hack
 static addr_t lookup_sym(const struct binary *binary, const char *sym) {
     if(!strcmp(sym, "_sysent")) {
         return find_int32(b_macho_segrange(binary, "__DATA"), 0x861000, true) + 4;
     }
-
-    // $t_XX_XX -> find "+ XX XX" in TEXT
-    if(!strncmp(sym, "$_", 2) || !strncmp(sym, "$t_", 3)) {
-        // lol...
-        char *to_find = malloc(strlen(sym)+1);
-        char *p = to_find;
-        while(1) {
-            char c = *sym++;
-            switch(c) {
-            case '$': if(*sym == 't') { c = '+'; sym++; } else { c = '-'; } break;
-            case '_': c = ' '; break;
-            case 'X': c = '.'; break;
-            }
-            *p++ = c;
-            if(!c) break;
-        }
-        uint32_t result = find_data(b_macho_segrange(binary, "__TEXT"), to_find, 0, 0);
-        free(to_find);
+    
+    if(!strncmp(sym, "$strref_", 8)) {
+        // '_'.join(re.findall('(..)', 'foobar'.encode('hex')))
+        range_t range = b_macho_segrange(binary, "__TEXT");
+        addr_t result = find_data_munged(range, sym + 8, 1, MUST_FIND);
+        result = find_int32(range, result, MUST_FIND);
+        result = find_bof(range, result, 2);
+        printf("%x\n", result);
         return result;
+    }
+
+
+    // $_A_XX_XX_f0 -> find "- .. .. f0" in TEXT 
+    if(!strncmp(sym, "$_", 2)) {
+        return find_data_munged(b_macho_segrange(binary, "__TEXT"), sym + 2, 0, MUST_FIND);
     }
 
     if(!strncmp(sym, "$bl", 3) && sym[4] == '_') {
