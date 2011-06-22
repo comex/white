@@ -77,8 +77,13 @@ static addr_t find_data_munged(range_t range, const char *to_find, int align, in
 
 // gigantic hack
 static addr_t lookup_sym(const struct binary *binary, const char *sym) {
+    // special cases - should be done in some kind of generic way
     if(!strcmp(sym, "_sysent")) {
         return find_int32(b_macho_segrange(binary, "__DATA"), 0x861000, true) + 4;
+    }
+
+    if(!strcmp(sym, "_vfs_op_descs")) {
+        return find_int32(b_macho_segrange(binary, "__DATA"), b_sym(binary, "_vnop_default_desc", MUST_FIND), MUST_FIND);
     }
     
     if(!strncmp(sym, "$strref_", 8)) {
@@ -87,10 +92,8 @@ static addr_t lookup_sym(const struct binary *binary, const char *sym) {
         addr_t result = find_data_munged(range, sym + 8, 1, MUST_FIND);
         result = find_int32(range, result, MUST_FIND);
         result = find_bof(range, result, 2);
-        printf("%x\n", result);
         return result;
     }
-
 
     // $_A_XX_XX_f0 -> find "- .. .. f0" in TEXT 
     if(!strncmp(sym, "$_", 2)) {
@@ -98,14 +101,12 @@ static addr_t lookup_sym(const struct binary *binary, const char *sym) {
     }
 
     if(!strncmp(sym, "$bl", 3) && sym[4] == '_') {
-        uint32_t func = b_sym(binary, sym + 5, MUST_FIND | TO_EXECUTE);
+        uint32_t func = b_sym(binary, sym + 5, TO_EXECUTE);
+        if(!func) return 0;
         range_t range = (range_t) {binary, func, 0x1000};
         int number = sym[3] - '0';
         uint32_t bl = 0;
         while(number--) bl = find_bl(&range);
-        if(!bl) {
-            die("no bl for %s", sym);
-        }
         return bl;
     }
 
