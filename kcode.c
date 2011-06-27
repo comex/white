@@ -37,6 +37,12 @@ static void get_return_addresses(struct frame *frame, void **returns, int n) {
 }
 
 static void *generic_hook(bool should_trace, void *old, struct apply_args *args) {
+    void *returns[6];
+    get_return_addresses((struct frame *) &args->r7, returns, 6);
+    IOLog("hook: from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p pid=%d",
+        returns[0], returns[1], returns[2], returns[3], returns[4], returns[5],
+        args->r0, args->r1, args->r2, args->r3, args->sp[0], args->sp[1], args->sp[2],
+        proc_pid(current_proc()));
     if(should_trace) {
         protoss_go();
     }
@@ -44,14 +50,7 @@ static void *generic_hook(bool should_trace, void *old, struct apply_args *args)
     if(should_trace) {
         protoss_stop();
     }
-    void *returns[6];
-    get_return_addresses((struct frame *) &args->r7, returns, 6);
-    IOLog("hook%s: from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p result=%p pid=%d\n",
-        should_trace ? " (traced)" : "",
-        returns[0], returns[1], returns[2], returns[3], returns[4], returns[5],
-        args->r0, args->r1, args->r2, args->r3, args->sp[0], args->sp[1], args->sp[2],
-        result->r0,
-        proc_pid(current_proc()));
+    IOLog(" result=%p%s\n", result->r0, should_trace ? " (traced)" : "");
     return result;
 }
 

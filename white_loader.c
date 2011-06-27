@@ -69,6 +69,7 @@ static addr_t find_data_munged(range_t range, const char *to_find, int align, in
             case '_': *p = ' '; break;
             case 'X': *p = '.'; break;
             case 'A': *p = '-'; break;
+            case 'C': *p = '-'; align = 1; break;
             case 'T': *p = '+'; break;
         }
     }
@@ -85,7 +86,7 @@ static addr_t lookup_sym(const struct binary *binary, const char *sym) {
     if(!strcmp(sym, "_vfs_op_descs")) {
         return find_int32(b_macho_segrange(binary, "__DATA"), b_sym(binary, "_vnop_default_desc", MUST_FIND), MUST_FIND);
     }
-    
+
     if(!strncmp(sym, "$strref_", 8)) {
         // '_'.join(re.findall('(..)', 'foobar'.encode('hex')))
         range_t range = b_macho_segrange(binary, "__TEXT");
@@ -100,8 +101,12 @@ static addr_t lookup_sym(const struct binary *binary, const char *sym) {
         return find_data_munged(b_macho_segrange(binary, "__TEXT"), sym + 2, 0, MUST_FIND);
     }
 
+    if(!strncmp(sym, "$ldr_", 5)) {
+        return resolve_ldr(binary, lookup_sym(binary, sym + 5));
+    }
+
     if(!strncmp(sym, "$bl", 3) && sym[4] == '_') {
-        uint32_t func = b_sym(binary, sym + 5, TO_EXECUTE);
+        uint32_t func = lookup_sym(binary, sym + 5);
         if(!func) return 0;
         range_t range = (range_t) {binary, func, 0x1000};
         int number = sym[3] - '0';
