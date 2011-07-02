@@ -3,11 +3,16 @@
 
 static void *hook_tag;
 
+static lck_grp_t *lck_grp;
+
+static char *putc_buf;
+static const size_t putc_size = 1048576;
+static int idx;
+static lck_mtx_t *putc_lck; 
+
 #ifndef NO_TRACER
 static int tracer_ticks;
 #endif
-static lck_grp_t *lck_grp;
-static lck_mtx_t *tracer_lck;
 
 struct apply_args {
     void **sp;
@@ -39,7 +44,8 @@ static void get_return_addresses(struct frame *frame, void **returns, int n) {
 static void *generic_hook(bool should_trace, void *old, struct apply_args *args) {
     void *returns[6];
     get_return_addresses((struct frame *) &args->r7, returns, 6);
-    IOLog("hook: from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p pid=%d",
+    IOLog("hook%s: from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p pid=%d",
+        should_trace ? " (trace)" : "",
         returns[0], returns[1], returns[2], returns[3], returns[4], returns[5],
         args->r0, args->r1, args->r2, args->r3, args->sp[0], args->sp[1], args->sp[2],
         proc_pid(current_proc()));
@@ -50,7 +56,7 @@ static void *generic_hook(bool should_trace, void *old, struct apply_args *args)
     if(should_trace) {
         protoss_stop();
     }
-    IOLog(" result=%p%s\n", result->r0, should_trace ? " (traced)" : "");
+    IOLog(" result=%p\n", result->r0);
     return result;
 }
 
@@ -82,10 +88,8 @@ static void *logger_hook(void *old, struct apply_args *args) {
 
 #ifndef NO_TRACER
 static void *tracer_hook(void *old, struct apply_args *args) {
-    lck_mtx_lock(tracer_lck);
-    bool should_trace = !tracer_ticks--;
+    bool should_trace = !OSAddAtomic(-1, &tracer_ticks);
     void *result = generic_hook(should_trace, old, args);
-    lck_mtx_unlock(tracer_lck);
     __builtin_return(result);
 }
 #endif
@@ -212,10 +216,41 @@ static int add_hook(void *addr, void *replacement, int mode) {
     }
 }
 
+static void putc_hook(void *old, struct apply_args *args) {
+    char ch = (int) args->r0;
+    lck_mtx_lock(putc_lck);
+    putc_buf[idx] = ch;
+    idx = (idx + 1) % putc_size;
+    lck_mtx_unlock(putc_lck);
+    __builtin_return(__builtin_apply(old, args, 4));
+}
+
+static int hook_putc() {
+    lck_mtx_lock(putc_lck);
+    if(putc_buf) IOFree(putc_buf);
+    char *buf = putc_buf = IOMalloc(putc_size);
+    if(buf) memset(buf, 0, putc_size);
+    idx = 0;
+    lck_mtx_unlock(putc_lck);
+    if(!buf) return -2;
+    add_hook(conslog_putc, putc_hook, 0);
+    return 0;
+}
+
+static int get_putc(user_addr_t buf, size_t size) {
+    int result = -1;
+    lck_mtx_lock(putc_lck);
+    if(putc_buf && size <= putc_size){
+        result = copyout(putc_buf, buf, size);
+    }
+    lck_mtx_unlock(putc_lck);
+    return result;
+}
 
 int do_something() {
-    LC int serial_getc();
-    return serial_getc();
+    //LC int serial_getc();
+    //return serial_getc();
+
     return 0;
 }
 
@@ -238,8 +273,9 @@ void init() {
     IOLog("init %p\n", mysyscall);
     saved_sysent = sysent[8];
     sysent[8] = (struct sysent){ 1, 0, 0, (void *) mysyscall, NULL, NULL, _SYSCALL_RET_INT_T, sizeof(struct mysyscall_args) };
+
     lck_grp = lck_grp_alloc_init("kcode", NULL);
-    tracer_lck = lck_mtx_alloc_init(lck_grp, NULL);
+    putc_lck = lck_mtx_alloc_init(lck_grp, NULL);
 }
 
 void fini_() {
@@ -249,12 +285,18 @@ void fini_() {
     while(hook_tag) {
         hook_tag = unhook(hook_tag);
     }
+    
+
+    lck_mtx_lock(putc_lck);
+    if(putc_buf) IOFree(putc_buf);
+    putc_buf = NULL;
+    lck_mtx_unlock(putc_lck);
 }
 
 __attribute__((destructor))
 void fini() {
     fini_();
-    lck_mtx_free(tracer_lck, lck_grp);
+    lck_mtx_free(putc_lck, lck_grp);
     lck_grp_free(lck_grp);
     sysent[8] = saved_sysent;
 }
@@ -386,6 +428,12 @@ int mysyscall(unused void *p, struct mysyscall_args *uap, int32_t *retval)
         break;
     case 28:
         *retval = (int32_t) get_proc_map((int) uap->b);
+        break;
+    case 29:
+        *retval = hook_putc();
+        break;
+    case 30:
+        *retval = get_putc(uap->b, uap->c);
         break;
     default:
         IOLog("Unknown mode %d\n", uap->mode);

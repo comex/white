@@ -16,9 +16,13 @@
     ((typ (***)(void *, ...)) _o)[0][(num)](_o, ##args); \
 })
 
-typedef uint32_t user_addr_t;
-typedef uint32_t vm_size_t, vm_address_t, boolean_t, size_t, vm_offset_t, vm_prot_t, vm_map_size_t;
-typedef int32_t pid_t, kern_return_t;
+typedef uint32_t user_addr_t, vm_size_t, vm_address_t, boolean_t, size_t, vm_offset_t, vm_prot_t, vm_map_size_t, uid_t, gid_t, dev_t;
+typedef uint16_t mode_t;
+typedef int32_t pid_t, kern_return_t, time_t;
+
+typedef uint32_t u_int32_t;
+typedef uint16_t u_int16_t;
+typedef uint8_t u_int8_t;
 
 typedef struct ipc_port *mach_port_t;
 
@@ -47,7 +51,7 @@ typedef struct proc {
     struct task *task;
 } *proc_t;
 
-typedef uint32_t lck_mtx_t[3];
+typedef uint32_t lck_mtx_t[3], lck_rw_t[3];
 
 typedef struct _lck_grp_ lck_grp_t;
 
@@ -71,6 +75,8 @@ LC void *memmove(void *restrict s1, const void *restrict s2, size_t len);
 LC void invalidate_icache(vm_offset_t addr, unsigned cnt, bool phys);
 
 LC void flush_dcache(vm_offset_t addr, unsigned cnt, bool phys);
+
+LC int32_t OSAddAtomic(int32_t amount, volatile int32_t *address);
 
 LC void *IOMalloc(size_t size);
 LC void IOFree(void *p);

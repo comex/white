@@ -403,7 +403,7 @@ int protoss_get_records(int type, user_addr_t buf, uint32_t bufsize) {
         return -1;
     }
     if(!ptr) return -1;
-    IOLog("cur_count = %d\n", cur_count);
     if(size > bufsize) size = bufsize;
-    return copyout(ptr, buf, size);
+    if(copyout(ptr, buf, size)) return -1;
+    return cur_count;
 }

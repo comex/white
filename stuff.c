@@ -185,10 +185,11 @@ static void dump_protoss() {
     size_t size = 0x8000 * sizeof(struct trace_entry);
     struct trace_entry *buf = malloc(size);
     memset(buf, 0, size);
-    assert(!syscall(8, 14, 0, buf, size));
-    for(size_t i = 1; i < ((size - 1) / sizeof(struct trace_entry)); i++) {
+    int limit = syscall(8, 14, 0, buf, size);
+    assert(limit != -1);
+    for(int i = 1; i < 0x7fff; i++) {
         if(buf[i].pc) {
-            printf("%.5zd %08x", i, buf[i].pc);
+            printf("%.5d %08x", i, buf[i].pc);
             for(int r = 0; r < 12; r++)  {
                 if(buf[i].r[r] != buf[i-1].r[r]) {
                     printf(" R%d=%08x", r, buf[i].r[r]);
@@ -197,6 +198,9 @@ static void dump_protoss() {
             if(buf[i].sp != buf[i-1].sp) printf(" SP=%08x", buf[i].sp);
             if(buf[i].lr != buf[i-1].lr) printf(" LR=%08x", buf[i].lr);
             printf("\n");
+        }
+        if(i == limit - 1) {
+            printf("--- ptr ---\n");
         }
     }
     free(buf);
@@ -216,10 +220,11 @@ static void dump_watch() {
     size_t size = 0x8000 * sizeof(struct watch_entry);
     struct watch_entry *buf = malloc(size);
     memset(buf, 0, size);
-    assert(!syscall(8, 14, 1, buf, size));
-    for(size_t i = 0; i < ((size - 1) / sizeof(struct watch_entry)); i++) {
+    int limit = syscall(8, 14, 1, buf, size);
+    assert(limit != -1);
+    for(int i = 0; i < 0x7fff; i++) {
         if(buf[i].accessed_address) {
-            printf("%.5zd %08x %s%08x] <- %08x", i, buf[i].accessed_address, buf[i].was_store ? "STORE [was " : "LOAD [", buf[i].accessed_value, buf[i].pc);
+            printf("%.5d %08x %s%08x] <- %08x", i, buf[i].accessed_address, buf[i].was_store ? "STORE [was " : "LOAD [", buf[i].accessed_value, buf[i].pc);
             for(int r = 0; r <= 12; r++)  {
                 printf(" R%d=%08x", r, buf[i].r[r]);
             }
@@ -322,7 +327,7 @@ int main(int argc, char **argv) {
         {0, 0, 0, 0}
     };
     int idx;
-    while((c = getopt_long(argc, argv, "r012sl:w:L:W:uh:v:w:c:CPUdt:a:Ao:p:f", options, &idx)) != -1) {
+    while((c = getopt_long(argc, argv, "mMr012sl:w:L:W:uh:v:w:c:CPUdt:a:Ao:p:f", options, &idx)) != -1) {
         did_something = true;
         switch(c) {
         case 'r':
@@ -456,6 +461,15 @@ int main(int argc, char **argv) {
             printf("mach_absolute_time: %llu * %d/%d\n", mach_absolute_time(), info.numer, info.denom);
             break;
         }
+        case 'm':
+            assert(!syscall(8, 29));
+            break;
+        case 'M': {
+            static char buf[1048576];
+            assert(!syscall(8, 30, buf, sizeof(buf)));
+            printf("%s", buf);
+            break;
+        }
         case '?':
         default:
             goto usage;
@@ -497,6 +511,8 @@ usage:
            "    --write-debug-reg num=val: write debug reg\n"
            "    -o addr:               get object info\n"
            "    -d:                    Debugger()\n"
+           "    -m:                    hook conslog_putc (like dmesg)\n"
+           "    -M:                    see conslog_putc results\n"
            "    --do-something:        so transient I won't make it a real option\n"
            "    --time:                mach_absolute_time\n"
            , argv[0]);
