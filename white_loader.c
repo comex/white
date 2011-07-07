@@ -65,12 +65,14 @@ static addr_t apply_loader_stuff(const struct binary *binary) {
 static addr_t find_data_munged(range_t range, const char *to_find, int align, int options) {
     autofree char *buf = strdup(to_find);
     for(char *p = buf; *p; p++) {
+        s:
         switch(*p) {
             case '_': *p = ' '; break;
             case 'X': *p = '.'; break;
             case 'A': *p = '-'; break;
             case 'C': *p = '-'; align = 1; break;
             case 'T': *p = '+'; break;
+            case 'M': align = 1; strcpy(p, p + 2); goto s;
         }
     }
     return find_data(range, buf, align, options);

@@ -7,13 +7,15 @@ void *hook(void *addr, void *replacement, int mode, void *tag) {
     uint32_t value = storeto[0];
     uint32_t value2 = 0;
     uint32_t *p;
+    void *to_flush;
     uint32_t alloc;
     uint32_t insn;
 
     // Verify that it's safe to hook.
     // We expect PUSH {regs, LR}; ADD R7, SP, #x
     if(thumb) {
-        if((value & 0xff00ff00) != 0xaf00b500) {
+        value2 = 0x46c046c0;
+        if(mode != 2 && (value & 0xff00ff00) != 0xaf00b500) {
             IOLog("I couldn't hook %p because its prolog is weird (%08x)\n", addr, value);
             if(mode) {
                 IOLog("...but I'll do it anyway\n");
@@ -40,6 +42,8 @@ void *hook(void *addr, void *replacement, int mode, void *tag) {
         insn = 0xf000f8df | ((i - 1) << 18);
         IOLog("hook: I got insn=%08x storeto=%p number=%08x\n", insn, storeto, number);
 
+        to_flush = (void *) (number & ~1);
+
         if(number & 1) {
             *cast(uint16_t *, number & ~1) = 0x4778; // bx pc
         }
@@ -60,7 +64,7 @@ void *hook(void *addr, void *replacement, int mode, void *tag) {
             IOLog("couldn't allocate\n");
             return NULL;
         }
-        p = cast(void *, alloc);
+        to_flush = p = cast(void *, alloc);
         insn = 0xe51ff004;
     }
 
@@ -92,9 +96,7 @@ void *hook(void *addr, void *replacement, int mode, void *tag) {
 
     // The return stub
     *p++ = value;
-    if(!thumb) {
-        *p++ = value2;
-    }
+    *p++ = value2;
     *p++ = thumb ? 0xf000f8df : 0xe51ff004; // ldr pc, [pc]
     *p++ = cast(uint32_t, addr) + (thumb ? 4 : 8);
     
@@ -105,6 +107,8 @@ void *hook(void *addr, void *replacement, int mode, void *tag) {
     *p++ = cast(uint32_t, addr);
     *p++ = value;
     *p++ = value2;
+
+    flush_cache(to_flush, (void *) p - to_flush);
     
     vm_protect(kernel_map, cast(vm_address_t, alloc), thumb ? 0x2000 : 0x1000, 1, 5);
     vm_protect(kernel_map, cast(vm_address_t, alloc), thumb ? 0x2000 : 0x1000, 0, 5);
@@ -115,6 +119,7 @@ void *hook(void *addr, void *replacement, int mode, void *tag) {
         storeto[1] = alloc;
     }
     flush_cache(storeto, 8);
+
     return ret;
 }
 
@@ -133,4 +138,9 @@ void *unhook(uint32_t *stuff) {
     }
     IOLog("unhooked %p\n", storeto);
     return tag;
+}
+
+void *old_to_pc(void *old) {
+    uintptr_t val = ((uint32_t *) ((uintptr_t) old & ~1))[3];
+    return (void *) (val - ((val & 1) ? 5 : 8));
 }

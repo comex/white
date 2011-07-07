@@ -5,9 +5,10 @@ static void *hook_tag;
 
 static lck_grp_t *lck_grp;
 
-static char *putc_buf;
+static char *volatile putc_buf;
+static volatile int32_t putc_inuse;
 static const size_t putc_size = 1048576;
-static int idx;
+static int32_t idx;
 static lck_mtx_t *putc_lck; 
 
 #ifndef NO_TRACER
@@ -44,8 +45,9 @@ static void get_return_addresses(struct frame *frame, void **returns, int n) {
 static void *generic_hook(bool should_trace, void *old, struct apply_args *args) {
     void *returns[6];
     get_return_addresses((struct frame *) &args->r7, returns, 6);
-    IOLog("hook%s: from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p pid=%d",
+    IOLog("hook%s: %p from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p pid=%d",
         should_trace ? " (trace)" : "",
+        old_to_pc(old),
         returns[0], returns[1], returns[2], returns[3], returns[4], returns[5],
         args->r0, args->r1, args->r2, args->r3, args->sp[0], args->sp[1], args->sp[2],
         proc_pid(current_proc()));
@@ -76,6 +78,12 @@ static void noreturn_hook(uint32_t regs[14], uint32_t pc) {
     IOLog("[%d] @%x hook: r0=0x%x r1=0x%x r2=0x%x r3=0x%x r4=0x%x r5=0x%x r6=0x%x r7=0x%x r8=0x%x r9=0x%x r10=0x%x r11=0x%x r12=0x%x sp=%p lr=0x%x\n", proc_pid(current_proc()), pc, regs[0], regs[1], regs[2], regs[3], regs[4], regs[5], regs[6], regs[7], regs[8], regs[9], regs[10], regs[11], regs[12], regs + 14, regs[13]);
 }
 
+unused
+static void hang_hook(uint32_t regs[14], uint32_t pc) {
+    noreturn_hook(regs, pc);
+    while(1) IOSleep(1000);
+}
+
 static void delay_hook(unused uint32_t regs[14], unused uint32_t pc) {
     IOLog("(delaying)\n");
     IOSleep(10000);
@@ -94,15 +102,17 @@ static void *tracer_hook(void *old, struct apply_args *args) {
 }
 #endif
 
-static void foo(const char *label, void *old, uint32_t *p) {
+__attribute__((always_inline))
+static void foo(bool out, void *old, uint32_t *p, void *ret) {
     //IOLog("in (%p): %x %x %x %x %x .. %x\n", p, p[0], p[1], p[2], p[3], p[4], *((uint32_t *) p[4]));
-    IOLog("%p:%s (%p):", old, label, p);
+    IOLog("%p:%s (%p):", old, out ? "out" : "in", p);
     if(p) {
         IOLog(" %x %x %x %x %x", p[0], p[1], p[2], p[3], p[4]);
-        if(p[1]) {
+        /*if(p[1]) {
             IOLog(" .. %x", *((uint32_t *) p[1]));
-        }
+        }*/
     }
+    if(out) IOLog(" ret=%p", ret);
     IOLog("\n");
 }
 
@@ -114,9 +124,9 @@ static void *weird_hook(void *old, struct apply_args *args) {
     IOLog("[%d %s] saved R0=%x R1=%x R2=%x R3=%x R4=%x R5=%x R6=%x R7=%x R8=%x R9=%x R10=%x R11=%x R12=%x SP=%x LR=%x PC=%x CPSR=%x\n", pid, name, p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15], p[16]);*/
     //__builtin_return(generic_hook(false, old, args));
     uint32_t *p = (uint32_t *) args->r0;
-    foo("in", old, p);
-    void *result = __builtin_apply(old, args, 32);
-    foo("out", old, p);
+    foo(false, old, p, NULL);
+    struct apply_result *result = __builtin_apply(old, args, 64);
+    foo(true, old, p, result->r0);
     __builtin_return(result);
 }
 
@@ -217,23 +227,33 @@ static int add_hook(void *addr, void *replacement, int mode) {
 }
 
 static void putc_hook(void *old, struct apply_args *args) {
-    char ch = (int) args->r0;
-    lck_mtx_lock(putc_lck);
-    putc_buf[idx] = ch;
-    idx = (idx + 1) % putc_size;
-    lck_mtx_unlock(putc_lck);
+    OSAddAtomic(1, &putc_inuse);
+    char *buf = putc_buf;
+    if(buf) {
+        int i = OSAddAtomic(1, &idx);
+        char ch = (int) args->r0;
+        buf[i % putc_size] = ch;
+    }
+    OSAddAtomic(-1, &putc_inuse);
     __builtin_return(__builtin_apply(old, args, 4));
 }
 
 static int hook_putc() {
     lck_mtx_lock(putc_lck);
-    if(putc_buf) IOFree(putc_buf);
-    char *buf = putc_buf = IOMalloc(putc_size);
-    if(buf) memset(buf, 0, putc_size);
+    char *buf = putc_buf;
+    if(buf) {
+        putc_buf = 0;
+        while(putc_inuse);
+        IOFree(buf);
+    }
     idx = 0;
-    lck_mtx_unlock(putc_lck);
+    buf = IOMalloc(putc_size);
+    if(buf) memset(buf, 0, putc_size);
+    putc_buf = buf;
     if(!buf) return -2;
     add_hook(conslog_putc, putc_hook, 0);
+    add_hook(what_putc, putc_hook, 0);
+    lck_mtx_unlock(putc_lck);
     return 0;
 }
 
@@ -273,9 +293,19 @@ void init() {
     IOLog("init %p\n", mysyscall);
     saved_sysent = sysent[8];
     sysent[8] = (struct sysent){ 1, 0, 0, (void *) mysyscall, NULL, NULL, _SYSCALL_RET_INT_T, sizeof(struct mysyscall_args) };
-
+    
     lck_grp = lck_grp_alloc_init("kcode", NULL);
     putc_lck = lck_mtx_alloc_init(lck_grp, NULL);
+    
+    
+    /*add_hook((void *) 0x8069f779, hang_hook, 2);
+    add_hook((void *) 0x8069f769, noreturn_hook, 2);
+    add_hook((void *) 0x8069f74d, noreturn_hook, 2);
+    add_hook((void *) 0x8069f72d, noreturn_hook, 2);
+    add_hook((void *) 0x8069e051, hang_hook, 2);
+    
+    IOLog("Hello!\n");
+    IOSleep(2000);*/
 }
 
 void fini_() {

@@ -156,6 +156,7 @@ typedef	void (*thread_continue_t)(void *param, int wait_result);
 LC kern_return_t kernel_thread_start(thread_continue_t continuation, void *parameter, mach_port_t *new_thread);
 
 LC void conslog_putc(char c);
+LC void what_putc(char c) asm("$_T_M_XX_XX_XX_XX_XX_XX_44_b2_2b_68_5b_b1");
 
 typedef enum IODirection { 
     kIODirectionNone = 0, 

@@ -2,6 +2,7 @@
 // black.c
 void *hook(void *addr, void *replacement, int mode, void *tag);
 void *unhook(void *stub);
+void *old_to_pc(void *old);
 // creep.c
 int creep_go(void *start, int size);
 void creep_get_records(user_addr_t buf, uint32_t bufsize);
