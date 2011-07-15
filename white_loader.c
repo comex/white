@@ -80,7 +80,7 @@ static addr_t find_data_munged(range_t range, const char *to_find, int align, in
 
 // gigantic hack
 static addr_t lookup_sym(const struct binary *binary, const char *sym) {
-    // special cases - should be done in some kind of generic way
+    // special cases - really should be done in some kind of generic way
     if(!strcmp(sym, "_sysent")) {
         return find_int32(b_macho_segrange(binary, "__DATA"), 0x861000, true) + 4;
     }
@@ -101,6 +101,14 @@ static addr_t lookup_sym(const struct binary *binary, const char *sym) {
     // $_A_XX_XX_f0 -> find "- .. .. f0" in TEXT 
     if(!strncmp(sym, "$_", 2)) {
         return find_data_munged(b_macho_segrange(binary, "__TEXT"), sym + 2, 0, MUST_FIND);
+    }
+
+    // $in___TEXT__whatever
+    if(!strncmp(sym, "$in___", 4)) {
+        const char *sep = strstr(sym + 6, "__");
+        char *seg = strdup(sym + 4);
+        seg[sep - (sym + 4)] = 0;
+        return find_data_munged(b_macho_segrange(binary, seg), sep + 2, 0, MUST_FIND);
     }
 
     if(!strncmp(sym, "$ldr_", 5)) {
@@ -151,9 +159,9 @@ int main(int argc, char **argv) {
     b_init(&kern);
     (void) argc;
     argv++;
-    while(1) {
+    bool ok = false;
+    while(*argv) {
         char *arg = *argv++;
-        if(!arg) goto usage;
         if(arg[0] != '-' || arg[1] == '\0' || arg[2] != '\0') goto usage;
         switch(arg[1]) {
 #ifndef MINIMAL
@@ -176,27 +184,30 @@ int main(int argc, char **argv) {
         }
 #endif
         case 'p': {
+        case 'P':
+            ok = true;
             if(!kern.valid) goto usage;
             if(!*argv) goto usage;
             char *to_load_fn, *output_fn;
-            uint32_t slide = 0xf0000000;
-            while(to_load_fn = *argv++) {
-                if(!(output_fn = *argv++)) goto usage;
-                struct binary to_load;
-                b_init(&to_load);
-                b_load_macho(&to_load, to_load_fn);
-                if(!(to_load.mach->hdr->flags & MH_PREBOUND)) {
-                    if(!kern.valid) goto usage;
-                    b_relocate(&to_load, &kern, lookup_sym, slide);
-                    insert_loader_stuff(&to_load, &kern);
-                    slide += 0x10000;
-                }
-                to_load.mach->hdr->flags |= MH_PREBOUND;
-                b_macho_store(&to_load, output_fn);
+            if(!(to_load_fn = *argv++)) goto usage;
+            if(!(output_fn = *argv++)) goto usage;
+
+            struct binary to_load;
+            b_init(&to_load);
+            b_load_macho(&to_load, to_load_fn);
+            if(to_load.mach->hdr->flags & MH_PREBOUND) die("prebound");
+            if(arg[1] == 'P') {
+                b_relocate(&to_load, &kern, RELOC_DEFAULT, lookup_sym, 0xf0000000);
+            } else {
+                b_relocate(&to_load, &kern, RELOC_EXTERN_ONLY, lookup_sym, 0);
             }
-            return 0;
+            insert_loader_stuff(&to_load, &kern);
+            b_macho_store(&to_load, output_fn);
+
+            break;
         }
         case 'q': {
+            ok = true;
             if(!kern.valid) goto usage;
             char *out_kern = *argv++;
             if(!out_kern) goto usage;
@@ -213,58 +224,67 @@ int main(int argc, char **argv) {
                 struct binary to_load;
                 b_init(&to_load);
                 b_load_macho(&to_load, to_load_fn);
-                if(!(to_load.mach->hdr->flags & MH_PREBOUND)) {
-                    b_relocate(&to_load, &kern, lookup_sym, b_allocate_from_macho_fd(fd));
-                }
+                if(to_load.mach->hdr->flags & MH_PREBOUND) die("prebound");
+                b_relocate(&to_load, &kern, RELOC_DEFAULT, lookup_sym, b_allocate_from_macho_fd(fd));
                 b_inject_into_macho_fd(&to_load, fd, find_hack_func);
             }
             close(fd);
 
             return 0;
         }
-#endif
+#endif // MINIMAL
 #ifdef __APPLE__
         case 'l': {
-            if(!*argv) goto usage;
+            ok = true;
             char *to_load_fn;
-            while(to_load_fn = *argv++) {
-                struct binary to_load;
-                b_init(&to_load);
-                b_load_macho(&to_load, to_load_fn);
-                if(!(to_load.mach->hdr->flags & MH_PREBOUND)) {
-                    insert_loader_stuff(&to_load, &kern);
-                }
-                addr_t sysent = apply_loader_stuff(&to_load);
-                uint32_t slide = b_allocate_from_running_kernel(&to_load);
-                if(!(to_load.mach->hdr->flags & MH_PREBOUND)) {
-                    if(!kern.valid) goto usage;
-                    b_relocate(&to_load, &kern, lookup_sym, slide);
-                }
-                b_inject_into_running_kernel(&to_load, sysent);
-            }
-            return 0;
+            if(!(to_load_fn = *argv++)) goto usage;
+            struct binary to_load;
+            b_init(&to_load);
+            b_load_macho(&to_load, to_load_fn);
+            if(to_load.mach->hdr->flags & MH_PREBOUND) die("old-style prelink no longer supported");
+            if(kern.valid) insert_loader_stuff(&to_load, &kern);
+            addr_t sysent = apply_loader_stuff(&to_load);
+            uint32_t slide = b_allocate_from_running_kernel(&to_load);
+            b_relocate(&to_load, kern.valid ? &kern : NULL, RELOC_DEFAULT, lookup_sym, slide);
+            b_inject_into_running_kernel(&to_load, sysent);
+            break;
         }
         case 'u': {
+            ok = true;
             char *baseaddr_hex;
             if(!(baseaddr_hex = *argv++)) goto usage;
             unload_from_running_kernel(parse_hex_uint32(baseaddr_hex));
-            return 0;
+            break;
         }
 #endif
         }
     }
 
+    if(ok) return 0;
+
     usage:
-    printf("Usage: loader -k kern "
+    printf("Usage: loader "
+#ifdef MINIMAL
+                           "-l kcode.dylib                        load\n"
+#else
+#ifdef IMG3_SUPPORT
+        "[-k kern | -i img3 key iv]\n"
+           "                      "
+#else
+        "-k kern "
+#endif
 #ifdef __APPLE__
                                  "-l kcode.dylib                load\n"
            "                      "
 #endif
                                  "-p kcode.dylib out.dylib      prelink\n"
+           "                      -P kcode.dylib out.dylib      prelink & relocate (testing)\n"
            "                      -q out_kern kcode.dylib       insert into kc\n"
+#endif // MINIMAL
 #ifdef __APPLE__
            "              -u f0000000                           unload\n"
 #endif
            );
+    return 1;
 }
 

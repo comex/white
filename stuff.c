@@ -317,6 +317,7 @@ int main(int argc, char **argv) {
         {"crash-kernel", no_argument, 0, 129},
         {"test-protoss", no_argument, 0, 130},
         {"weird", required_argument, 0, 132},
+        {"sysctl", no_argument, 0, 144},
         {"note", required_argument, 0, 142},
         {"read-debug-reg", required_argument, 0, 136},
         {"write-debug-reg", required_argument, 0, 137},
@@ -386,6 +387,8 @@ int main(int argc, char **argv) {
         case 143:
             assert(!syscall(8, 12, parse_hex(optarg), hook_force));
             break;
+        case 144:
+            assert(!syscall(8, 31));
         case 132:
             assert(!syscall(8, 9, parse_hex(optarg), hook_force));
             break;
@@ -494,6 +497,7 @@ usage:
            "    -f:                    when hooking, force\n"
            "    -h addr:               hook for generic logging\n"
            "    --weird addr:          hook weird for logging\n"
+           "    --sysctl:              hook sysctl for logging\n"
            "    --note addr:           hook roughly arbitrary address\n"
            "    -c addr+size:          hook range for creep\n"
            "    -C:                    dump creep results\n"

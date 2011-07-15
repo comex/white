@@ -215,7 +215,7 @@ int protoss_go_watch(uint32_t address, uint32_t mask) {
     dbg_state.wcr[0].z3 = 0;
     dbg_state.wcr[0].byte_address_select = 0xff;
     dbg_state.wcr[0].loadstore_access_control = 3; // load or store
-    dbg_state.wcr[0].privileged_mode_control = 1; // privileged only
+    dbg_state.wcr[0].privileged_mode_control = 3; // (not) privileged only
     dbg_state.wcr[0].watchpoint_enable = 1;
 
     dbg_state.wvr[0] = address;

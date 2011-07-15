@@ -94,6 +94,35 @@ static void *logger_hook(void *old, struct apply_args *args) {
     __builtin_return(generic_hook(false, old, args));
 }
 
+static void *sysctl_hook(void *old, struct apply_args *args) {
+    int name[12];
+    struct {
+        user_addr_t name;
+        uint32_t namelen;
+        user_addr_t old;
+        user_addr_t oldlenp;
+        user_addr_t new;
+        user_addr_t newlen;
+    } *sa = (void *) args->r1;
+    if(sa->namelen <= 12 && !copyin(sa->name, name, sa->namelen * sizeof(int))) {
+        //IOLog("[%d] sysctl:", proc_pid(current_proc()));
+        //for(uint32_t i = 0; i < sa->namelen; i++) IOLog(" %x", name[i]);
+        //IOLog("\n");
+    }
+    void *result = __builtin_apply(old, args, 16);
+    if(sa->namelen == 4 && name[0] == 1 && name[1] == 14 && name[2] == 1) {
+        int flag;
+        if(!copyin(sa->old + 0x10, &flag, sizeof(flag))) {
+            int oldflag = flag;
+            flag &= ~0x800;
+            if(!copyout(&flag, sa->old + 0x10, sizeof(flag))) {
+                IOLog("[%d] patched p_flag from %x\n", proc_pid(current_proc()), oldflag);
+            }
+        }
+    }
+    __builtin_return(result);
+}
+
 #ifndef NO_TRACER
 static void *tracer_hook(void *old, struct apply_args *args) {
     bool should_trace = !OSAddAtomic(-1, &tracer_ticks);
@@ -464,6 +493,9 @@ int mysyscall(unused void *p, struct mysyscall_args *uap, int32_t *retval)
         break;
     case 30:
         *retval = get_putc(uap->b, uap->c);
+        break;
+    case 31:
+        *retval = add_hook(sysent[202].sy_call, sysctl_hook, 0);
         break;
     default:
         IOLog("Unknown mode %d\n", uap->mode);
