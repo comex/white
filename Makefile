@@ -13,7 +13,7 @@ ifneq "$(LDID)" ""
 	$(LDID) -Sent.plist $@
 endif
 
-%.o: %.c kinc.h
+%.o: %.c kinc.h kcode.h black.h
 	$(GCC_armv7) $(CFLAGS) -c -o $@ $<
 %.o: %.S
 	$(GCC_armv7) $(CFLAGS) -c -o $@ $<

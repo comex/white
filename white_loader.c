@@ -106,7 +106,11 @@ static addr_t lookup_sym(const struct binary *binary, const char *sym) {
     // $in___TEXT__whatever
     if(!strncmp(sym, "$in___", 4)) {
         const char *sep = strstr(sym + 6, "__");
-        char *seg = strdup(sym + 4);
+        if(!sep) {
+            fprintf(stderr, "missing ending __\n");
+            return 0;
+        }
+        autofree char *seg = strdup(sym + 4);
         seg[sep - (sym + 4)] = 0;
         return find_data_munged(b_macho_segrange(binary, seg), sep + 2, 0, MUST_FIND);
     }
@@ -175,7 +179,7 @@ int main(int argc, char **argv) {
         case 'i': {
             uint32_t key_bits;
             char *kern_fn;
-            prange_t data = parse_img3_file(kern_fn = *argv++, &key_bits);
+            prange_t data = parse_img3(load_file(kern_fn = *argv++, false, NULL), &key_bits);
             prange_t key = parse_hex_string(*argv++);
             prange_t iv = parse_hex_string(*argv++);
             prange_t decompressed = decrypt_and_decompress(key_bits, key, iv, data);

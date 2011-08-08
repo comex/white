@@ -1,3 +1,4 @@
+#pragma once
 #include <stdint.h>
 #include <stdbool.h>
 #define LC __attribute__((long_call))
@@ -81,11 +82,11 @@ LC int32_t OSAddAtomic(int32_t amount, volatile int32_t *address);
 LC void *IOMalloc(size_t size);
 LC void IOFree(void *p);
 
-LC int vm_allocate(vm_map_t map, vm_offset_t *addr, vm_size_t size, int flags);
+LC int vm_allocate(vm_map_t map, vm_address_t *addr, vm_size_t size, int flags);
 
 LC int vm_deallocate(register vm_map_t map, vm_offset_t start, vm_size_t size);
 
-LC int vm_protect(vm_map_t map, vm_offset_t start, vm_size_t size, boolean_t set_maximum, vm_prot_t new_protection);
+LC int vm_protect(vm_map_t map, vm_address_t address, vm_size_t size, boolean_t set_maximum, vm_prot_t new_protection);
 
 LC int copyout(const void *kernel_addr, user_addr_t user_addr, vm_size_t nbytes);
 
@@ -101,6 +102,12 @@ asm("$_T_f0_b5_03_af_05_46_1d_ee_90_4f_d4_f8");
 LC void vm_map_deallocate(vm_map_t map);
 
 LC void clock_get_system_microtime(uint32_t *sec, uint32_t *usec);
+
+typedef struct call_entry *thread_call_t;
+typedef void (*thread_call_func_t)(void *param0, void *param1);
+LC thread_call_t thread_call_allocate(thread_call_func_t func, void *param0);
+LC boolean_t thread_call_enter1(thread_call_t call, void *param1);
+
 
 // locks
 
@@ -279,6 +286,7 @@ static inline int IOUserClient_externalMethod(void *client, uint32_t selector, s
 static inline int IOUserClient_clientClose(void *client) {
     return METACALL(int, "__ZN12IOUserClient11clientCloseEv", client);
 }
+
 
 // copied from xnu
 

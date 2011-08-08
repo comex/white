@@ -15,21 +15,6 @@ static lck_mtx_t *putc_lck;
 static int tracer_ticks;
 #endif
 
-struct apply_args {
-    void **sp;
-    void *r0, *r1, *r2, *r3;
-    void *r7; // not actually part of the __builtin_apply_args() struct
-};
-
-struct apply_result {
-    void *r0, *r1, *r2, *r3;
-};
-
-struct frame {
-    struct frame *r7;
-    void *lr;
-};
-
 static void get_return_addresses(struct frame *frame, void **returns, int n) {
     while(n--) {
         uint32_t f = (uint32_t) frame;
@@ -44,10 +29,10 @@ static void get_return_addresses(struct frame *frame, void **returns, int n) {
 
 static void *generic_hook(bool should_trace, void *old, struct apply_args *args) {
     void *returns[6];
-    get_return_addresses((struct frame *) &args->r7, returns, 6);
+    get_return_addresses(&args->frame, returns, 6);
     IOLog("hook%s: %p from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p pid=%d",
         should_trace ? " (trace)" : "",
-        old_to_pc(old),
+        ((struct hook_info *) old)->storeto,
         returns[0], returns[1], returns[2], returns[3], returns[4], returns[5],
         args->r0, args->r1, args->r2, args->r3, args->sp[0], args->sp[1], args->sp[2],
         proc_pid(current_proc()));
@@ -297,9 +282,6 @@ static int get_putc(user_addr_t buf, size_t size) {
 }
 
 int do_something() {
-    //LC int serial_getc();
-    //return serial_getc();
-
     return 0;
 }
 
@@ -325,8 +307,7 @@ void init() {
     
     lck_grp = lck_grp_alloc_init("kcode", NULL);
     putc_lck = lck_mtx_alloc_init(lck_grp, NULL);
-    
-    
+
     /*add_hook((void *) 0x8069f779, hang_hook, 2);
     add_hook((void *) 0x8069f769, noreturn_hook, 2);
     add_hook((void *) 0x8069f74d, noreturn_hook, 2);
@@ -345,7 +326,6 @@ void fini_() {
         hook_tag = unhook(hook_tag);
     }
     
-
     lck_mtx_lock(putc_lck);
     if(putc_buf) IOFree(putc_buf);
     putc_buf = NULL;

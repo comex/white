@@ -73,7 +73,9 @@ struct trace_entry {
     uint32_t pc;
 } __attribute__((packed));
 
-extern struct trace_entry *trace_start, *trace_ptr, *trace_end;
+extern struct trace_entry *trace_start, *trace_end;
+extern struct trace_entry *volatile trace_ptr;
+static struct trace_entry *old_trace_ptr;
 
 #ifdef WATCHPOINTS
 struct watch_entry {
@@ -87,7 +89,7 @@ struct watch_entry {
 } __attribute__((packed));
 
 static struct watch_entry *watch_start;
-extern struct watch_entry *watch_ptr;
+extern volatile struct watch_entry *watch_ptr;
 
 extern uint32_t thread_exception_return[]
 asm("$_A_80_00_0c_f1_90_9f_1d_ee_XX_83_99_e5_XX_50_98_e5_00_00_55_e3");
@@ -284,7 +286,6 @@ int protoss_go() {
         trace_end = trace_start + NUM_TRACE_ENTRIES;
     }
     memset(trace_start, 0, NUM_TRACE_ENTRIES * sizeof(struct trace_entry));
-    trace_ptr = &trace_start[1];
 
     memset(&dbg_state, 0, sizeof(dbg_state));
 
@@ -315,7 +316,7 @@ int protoss_go() {
     dbg_state.bcr[4].breakpoint_enable = 1;
     
     // BVR <- current context ID
-    asm("mrc p15, 0, %0, c13, c0, 1" :"=r"(dbg_state.bvr[4]) :);
+    asm("mrc p15, 0, %0, c13, c0, 1" :"=r"(dbg_state.bvr[4]));
 
     // We can't ever branch to 80xxxxxx, so overwrite the data
     prefetch_saved = vector_base[3+8];
@@ -325,10 +326,15 @@ int protoss_go() {
     
     twiddle_dbg(true);
     
+    trace_ptr = &trace_start[1];
+    
     return 0;
 }
 
 void protoss_stop() {
+    old_trace_ptr = trace_ptr;
+    trace_ptr = NULL;
+
     disable_interrupts();
 
     if(trace_going || watch_going) {
@@ -389,7 +395,7 @@ int protoss_get_records(int type, user_addr_t buf, uint32_t bufsize) {
     switch(type) {
     case 0:
         ptr = trace_start;
-        cur_count = trace_ptr - trace_start;
+        cur_count = old_trace_ptr - trace_start;
         size = NUM_TRACE_ENTRIES * sizeof(struct trace_entry);
         break;
 #ifdef WATCHPOINTS

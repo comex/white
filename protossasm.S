@@ -29,6 +29,8 @@ _trace_prefetch_handler:
     str r1, [r0, #0x154]
 
     ldr sp, _trace_ptr
+    cmp sp, #0
+    beq fin1 ;# starting up / tearing down
     ldr r0, _trace_end
     cmp sp, r0
 #ifdef CIRCULAR
@@ -179,6 +181,8 @@ bpstuff:
     str r1, [r0, #0x1c0]
     
     ldr sp, _watch_ptr
+    cmp sp, #0
+    beq fin2 ;# starting up / tearing down
     ldr r1, [sp]
     cmp r1, #0
     bne fin2 ;# out of space

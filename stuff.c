@@ -187,16 +187,16 @@ static void dump_protoss() {
     memset(buf, 0, size);
     int limit = syscall(8, 14, 0, buf, size);
     assert(limit != -1);
-    for(int i = 1; i < 0x7fff; i++) {
+    for(int i = 0; i < 0x7fff; i++) {
         if(buf[i].pc) {
             printf("%.5d %08x", i, buf[i].pc);
             for(int r = 0; r < 12; r++)  {
-                if(buf[i].r[r] != buf[i-1].r[r]) {
+                if(i == 0 || buf[i].r[r] != buf[i-1].r[r]) {
                     printf(" R%d=%08x", r, buf[i].r[r]);
                 }
             }
-            if(buf[i].sp != buf[i-1].sp) printf(" SP=%08x", buf[i].sp);
-            if(buf[i].lr != buf[i-1].lr) printf(" LR=%08x", buf[i].lr);
+            if(i == 0 || buf[i].sp != buf[i-1].sp) printf(" SP=%08x", buf[i].sp);
+            if(i == 0 || buf[i].lr != buf[i-1].lr) printf(" LR=%08x", buf[i].lr);
             printf("\n");
         }
         if(i == limit - 1) {
