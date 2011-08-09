@@ -177,12 +177,10 @@ int main(int argc, char **argv) {
         }
 #ifdef IMG3_SUPPORT
         case 'i': {
-            uint32_t key_bits;
-            char *kern_fn;
-            prange_t data = parse_img3(load_file(kern_fn = *argv++, false, NULL), &key_bits);
-            prange_t key = parse_hex_string(*argv++);
-            prange_t iv = parse_hex_string(*argv++);
-            prange_t decompressed = decrypt_and_decompress(key_bits, key, iv, data);
+            const char *kern_fn = *argv++;
+            const char *key = *argv++;
+            const char *iv = *argv++;
+            prange_t decompressed = unpack(load_file(kern_fn, false, NULL), key, iv);
             b_prange_load_macho(&kern, decompressed, 0, kern_fn);
             break;
         }
