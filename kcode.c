@@ -358,32 +358,58 @@ struct regs {
     uint32_t dacr;
 };
 
+static int get_regs(user_addr_t addr) {
+    struct regs regs;
+    asm("mrs %0, cpsr" :"=r"(regs.cpsr));
+    asm("mrc p15, 0, %0, c2, c0, 0" :"=r"(regs.ttbr0));
+    asm("mrc p15, 0, %0, c2, c0, 1" :"=r"(regs.ttbr1));
+    asm("mrc p15, 0, %0, c2, c0, 2" :"=r"(regs.ttbcr));
+    asm("mrc p15, 0, %0, c13, c0, 1" :"=r"(regs.contextidr));
+    asm("mrc p15, 0, %0, c1, c0, 0" :"=r"(regs.sctlr));
+    //asm("mcr p15, 0, %0, c1, c1, 0" :: "r"(1 << 6));
+    asm("mrc p15, 0, %0, c1, c1, 0" :"=r"(regs.scr));
+    asm("mrc p14, 0, %0, c0, c0, 0" :"=r"(regs.dbgdidr));
+    asm("mrc p14, 0, %0, c1, c0, 0" :"=r"(regs.dbgdrar));
+    asm("mrc p14, 0, %0, c2, c0, 0" :"=r"(regs.dbgdsar));
+    asm("mrc p15, 0, %0, c0, c1, 2" :"=r"(regs.id_dfr0));
+    asm("mrc p14, 0, %0, c0, c1, 0" : "=r"(regs.dbgdscr));
+    asm("mrc p15, 0, %0, c13, c0, 4" : "=r"(regs.tpidrprw));
+    asm("mrc p15, 0, %0, c3, c0, 0" : "=r"(regs.dacr));
+    return copyout(&regs, addr, sizeof(regs));
+}
+
+struct cpuid_regs {
+    uint32_t id_pfr0;
+    uint32_t id_pfr1;
+    uint32_t id_dfr0;
+    uint32_t id_afr0;
+    uint32_t id_mmfr0;
+    uint32_t id_mmfr1;
+    uint32_t id_mmfr2;
+    uint32_t id_mmfr3;
+    uint32_t id_isar0;
+    uint32_t id_isar1;
+    uint32_t id_isar2;
+    uint32_t id_isar3;
+    uint32_t id_isar4;
+    uint32_t id_isar5;
+};
+
+static int get_cpuid_regs(user_addr_t addr) {
+#define R(CRm, opc2) ({ uint32_t a; asm("mrc p15, 0, %0, c0, " #CRm ", " #opc2 : "=r"(a)); a; })
+    struct cpuid_regs regs = {
+        R(c1, 0), R(c1, 1), R(c1, 2), R(c1, 3), R(c1, 4), R(c1, 5), R(c1, 6), R(c1, 7),
+        R(c2, 0), R(c2, 1), R(c2, 2), R(c2, 3), R(c2, 4), R(c2, 5)
+    };
+#undef R
+    return copyout(&regs, addr, sizeof(regs));
+}
+
 int mysyscall(unused void *p, struct mysyscall_args *uap, int32_t *retval)
 {
     switch(uap->mode) {
     case 0: { // get regs
-        struct regs regs;
-        asm("mrs %0, cpsr" :"=r"(regs.cpsr));
-        asm("mrc p15, 0, %0, c2, c0, 0" :"=r"(regs.ttbr0));
-        asm("mrc p15, 0, %0, c2, c0, 1" :"=r"(regs.ttbr1));
-        asm("mrc p15, 0, %0, c2, c0, 2" :"=r"(regs.ttbcr));
-        asm("mrc p15, 0, %0, c13, c0, 1" :"=r"(regs.contextidr));
-        asm("mrc p15, 0, %0, c1, c0, 0" :"=r"(regs.sctlr));
-        //asm("mcr p15, 0, %0, c1, c1, 0" :: "r"(1 << 6));
-        asm("mrc p15, 0, %0, c1, c1, 0" :"=r"(regs.scr));
-        asm("mrc p14, 0, %0, c0, c0, 0" :"=r"(regs.dbgdidr));
-        asm("mrc p14, 0, %0, c1, c0, 0" :"=r"(regs.dbgdrar));
-        asm("mrc p14, 0, %0, c2, c0, 0" :"=r"(regs.dbgdsar));
-        asm("mrc p15, 0, %0, c0, c1, 2" :"=r"(regs.id_dfr0));
-        asm("mrc p14, 0, %0, c0, c1, 0" : "=r"(regs.dbgdscr));
-        asm("mrc p15, 0, %0, c13, c0, 4" : "=r"(regs.tpidrprw));
-        asm("mrc p15, 0, %0, c3, c0, 0" : "=r"(regs.dacr));
-        *((volatile int *) 0x80001000);
-        *((volatile int *) 0x80001000);
-        *((volatile int *) 0x80001000);
-        int error;
-        if(error = copyout(&regs, (user_addr_t) uap->b, sizeof(regs))) return error;
-        *retval = 0;
+        *retval = get_regs(uap->b);
         break;
     }
     case 1: // copy data
@@ -476,6 +502,9 @@ int mysyscall(unused void *p, struct mysyscall_args *uap, int32_t *retval)
         break;
     case 31:
         *retval = add_hook(sysent[202].sy_call, sysctl_hook, 0);
+        break;
+    case 32:
+        *retval = get_cpuid_regs(uap->b);
         break;
     default:
         IOLog("Unknown mode %d\n", uap->mode);

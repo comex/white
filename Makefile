@@ -20,7 +20,7 @@ endif
 stuff: stuff.c
 	$(GCC_armv7) $(CFLAGS) -o stuff stuff.c
 
-GCC_DYLIB = $(GCC_armv7) $(CFLAGS) -dynamiclib -nostdlib -nodefaultlibs -lgcc -undefined dynamic_lookup -read_only_relocs suppress -segprot __TEXT rwx rwx -fblocks
+GCC_DYLIB = LD_NO_COMPACT_LINKEDIT=1 $(GCC_armv7) $(CFLAGS) -dynamiclib -nostdlib -nodefaultlibs -lgcc -undefined dynamic_lookup -read_only_relocs suppress -segprot __TEXT rwx rwx -fblocks
 
 kcode.dylib: kcode.o black.o creep.o creepasm.o protoss.o protossasm.o failsafe.o
 	$(GCC_DYLIB) -o $@ $^
@@ -32,7 +32,7 @@ milk.dylib: milk.o
 	$(GCC_DYLIB) -o $@ $^
 	
 mem.dylib: mem.c
-	$(GCC_armv7) $(CFLAGS) -dynamiclib -o mem.dylib mem.c -fwhole-program -combine -nostdinc -nodefaultlibs -lgcc -Wimplicit -Ixnu -Ixnu/bsd -Ixnu/libkern -Ixnu/osfmk -Ixnu/bsd/i386 -Ixnu/bsd/sys -Ixnu/EXTERNAL_HEADERS -Ixnu/osfmk/libsa -D__i386__ -DKERNEL -DKERNEL_PRIVATE -DBSD_KERNEL_PRIVATE -D__APPLE_API_PRIVATE -DXNU_KERNEL_PRIVATE -flat_namespace -undefined dynamic_lookup
+	LD_NO_COMPACT_LINKEDIT=1 $(GCC_armv7) $(CFLAGS) -dynamiclib -o mem.dylib mem.c -fwhole-program -combine -nostdinc -nodefaultlibs -lgcc -Wimplicit -Ixnu -Ixnu/bsd -Ixnu/libkern -Ixnu/osfmk -Ixnu/bsd/i386 -Ixnu/bsd/sys -Ixnu/EXTERNAL_HEADERS -Ixnu/osfmk/libsa -D__i386__ -DKERNEL -DKERNEL_PRIVATE -DBSD_KERNEL_PRIVATE -D__APPLE_API_PRIVATE -DXNU_KERNEL_PRIVATE -flat_namespace -undefined dynamic_lookup
 
 clean: .clean
 	make -C $(DATA) clean

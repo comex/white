@@ -14,23 +14,6 @@
 
 #define prop(a, off, typ) *((typ *)(((char *) (a))+(off)))
 
-struct regs {
-    uint32_t cpsr;
-    uint32_t ttbr0;
-    uint32_t ttbr1;
-    uint32_t ttbcr;
-    uint32_t contextidr;
-    uint32_t sctlr;
-    uint32_t scr;
-    uint32_t dbgdidr;
-    uint32_t dbgdrar;
-    uint32_t dbgdsar;
-    uint32_t id_dfr0;
-    uint32_t dbgdscr;
-    uint32_t tpidrprw;
-    uint32_t dacr;
-};
-
 int poke_mem(uint32_t kaddr, void *uaddr, uint32_t size, bool write, bool phys) {
     return syscall(8, 1, kaddr, uaddr, size, write, phys);
 }
@@ -287,7 +270,184 @@ static void list_iosurfaces() {
     }
 }
 
-uint32_t parse_hex(const char *optarg) {
+struct cpuid_regs {
+    uint32_t id_pfr0;
+    uint32_t id_pfr1;
+    uint32_t id_dfr0;
+    uint32_t id_afr0;
+    uint32_t id_mmfr0;
+    uint32_t id_mmfr1;
+    uint32_t id_mmfr2;
+    uint32_t id_mmfr3;
+    uint32_t id_isar0;
+    uint32_t id_isar1;
+    uint32_t id_isar2;
+    uint32_t id_isar3;
+    uint32_t id_isar4;
+    uint32_t id_isar5;
+};
+
+static inline uint32_t bits(uint32_t a, uint32_t hi, uint32_t lo) {
+    return (a >> lo) & ((1 << (hi - lo + 1)) - 1);
+}
+
+static void do_cpuid_regs() {
+    struct cpuid_regs regs;
+    assert(!syscall(8, 32, &regs));
+    uint32_t a;
+
+#define f(h, l, labels...) { uint32_t b = bits(a, h, l); char *labels_[] = {labels}; puts(b >= (sizeof(labels_)/sizeof(*labels_)) ? "RESERVED" : labels_[b]); }
+#define sg(h, l, c, label) g(bits(a, h, l), c, label)
+#define g(b, c, label) printf("%s %ssupported\n", label, (b) >= (c) ? "" : "NOT ")
+#define s(h, l, label) sg(h, l, 1, label)
+#define R4 "RESERVED", "RESERVED", "RESERVED", "RESERVED"
+#define R13 R4, R4, R4, "RESERVED"
+#define R14 R4, R4, R4, "RESERVED", "RESERVED"
+
+    a = regs.id_pfr0;
+    s(15, 12, "ThumbEE");
+    f(11, 8, "Jazelle NOT supported", "Jazelle supported without clearing of JOSCR.CV", "Jazelle supported with clearing of JOSCR.CV");
+    f(7, 4, "Thumb NOT supported", "Thumb supported", "RESERVED", "Thumb and Thumb-2 supported");
+    s(3, 0, "ARM");
+    printf("\n");
+
+    a = regs.id_pfr1;
+    f(11, 8, "Two-stack NOT supported", "RESERVED", "Two-stack supported");
+    f(7, 4, "Security Extensions NOT supported", "Security Extensions supported", "Security Extensions + NSACR.RFR supported");
+    s(3, 0, "Standard programmer's model");
+    printf("\n");
+
+    a = regs.id_dfr0;
+    s(23, 20, "M profile Debug");
+    s(19, 16, "ARM trace memory-mapped");
+    s(15, 12, "ARM trace coprocessor-based");
+    s(11, 8, "A/R profile debug memory-mapped");
+    s(7, 4, "Secure debug coprocessor");
+    s(3, 0, "A/R profile debug coprocessor");
+    printf("\n");
+
+    a = regs.id_mmfr0;
+    f(31, 28, "Innermost shareability = Non-cacheable", "Innermost shareability with hardware coherency", R13, "Shareability ignored");
+    s(27, 24, "FCSE");
+    f(23, 20, "No Auxiliary registers supported", "Auxiliary Control Register supported", "Auxiliary Control Register and Auxiliary Fault Status Registers supported");
+    f(19, 16, "TCMs NOT supported", "TCMs implementation defined", "TCM supported only (ARMv6)", "TCM and DMA supported (ARMv6)");
+    f(15, 12, "One level of shareability implemented", "Two levels of shareability implemented");
+    f(11, 8, "Outermost shareability = Non-cacheable", "Outermost shareability with hardware coherency", R13, "Shareability ignored");
+    f(7, 4, "PMSA NOT supported", "PMSA implementation defined", "PMSAv6 supported", "PMSAv7 supported");
+    f(3, 0, "VMSA NOT supported", "VMSA implementation defined", "VMSAv6 supported", "VMSAv7 supported");
+    printf("\n");
+
+    a = regs.id_mmfr1;
+    f(31, 28, "No branch predictor", "Branch predictor requires flushing in many cases", "Branch predictor requires flushing in few cases", "Branch predictor never requires flushing");
+    f(27, 24, "L1 cache test and clean NOT supported", "L1 cache test and clean supported", "L1 cache test, clean, and invalidate supported");
+    f(23, 20, "L1 unified cache maintenance NOT supported", "L1 unified cache invalidate supported", "L1 unified cache invalidate and clean supported");
+    f(19, 16, "L1 Harvard cache maintenance NOT supported", "L1 Harvard instruction cache invalidate supported", "L1 Harvard data and instruction cache invalidate supported", "L1 Harvard data and instruction cache invalidate and clean supported");
+    f(15, 12, "L1 unified cache line maintenance by set/way NOT supported", "L1 unified cache line clean by set/way supported", "L1 unified cache line clean and clean+invalidate by set/way supported", "L1 unified cache line clean, clean+invalidate, and invalidate by set/way supported");
+    f(11, 8, "L1 Harvard cache line maintenance by set/way NOT supported", "L1 Harvard data cache line clean and clean+invalidate by set/way supported", "L1 Harvard data cache line clean, clean+invalidate, and invalidate by set/way supported", "L1 Harvard data cache line clean, clean+invalidate, and invalidate, and instruction cache line invalidate, by set/way supported");
+    f(7, 4, "L1 unified cache line maintenance by MVA NOT supported", "L1 unified cache line clean, invalidate, and clean+invalidate by MVA supported", "L1 unified cache line clean, invalidate, and clean+invalidate, and branch predictor invalidate, by MVA supported");
+    f(3, 0, "L1 Harvard cache line maintenance by MVA NOT supported", "L1 Harvard data cache line clean, invalidate, and clean+invalidate, and instruction cache line invalidate, by MVA supported", "L1 Harvard data cache line clean, invalidate, and clean+invalidate, instruction cache line invalidate, and branch predictor invalidate, by MVA supported");
+    printf("\n");
+
+    a = regs.id_mmfr2;
+    s(31, 28, "VMSAv7 access flag");
+    s(27, 24, "WFI stalling");
+    f(23, 20, "CP15 memory barrier operations NOT supported", "CP15 DSB supported", "CP15 DSB, ISB, and DMB supported");
+    f(19, 16, "Unified TLB maintenance NOT supported", "Unified TLB invalidate all and by MVA supported", "Unified TLB invalidate all, by MVA, and by ASID supported", "Unified TLB invalidate all, by MVA, by ASID, and by MVA All ASID supported");
+    f(15, 12, "Harvard TLB maintenance NOT supported", "Harvard TLB maintenance invalidate all and by MVA supported", "Harvard TLB maintenance invalidate all, by MVA, and by ASID supported");
+    s(11, 8, "L1 Harvard cache maintenance by VA range");
+    s(7, 4, "L1 Harvard cache prefetch by VA");
+    s(3, 0, "L1 Harvard cache foreground prefetch by VA");
+    printf("\n");
+
+    a = regs.id_mmfr3;
+    f(31, 28, "Supersections supported", R14, "Supersections NOT supported");
+    s(23, 20, "Coherent walk");
+    f(15, 12, "Cache, TLB, and branch predictor maintenance not broadcast", "Cache and branch predictor maintenance broadcast", "Cache, TLB, and branch predictor maintenance broadcast");
+    f(11, 8, "Branch predictor maintenance NOT supported", "Branch predictor invalidate all supported", "Branch predictor invalidate all and by MVA supported");
+    s(7, 4, "Cache maintain by set/way");
+    s(3, 0, "Cache maintain by MVA");
+    printf("\n");
+
+    a = regs.id_isar0;
+    s(27, 24, "SDIV, UDIV");
+    s(23, 20, "BKPT");
+    sg(19, 16, 1, "Generic CDP, LDC, MCR, MRC, STC");
+    sg(19, 16, 2, "Generic CDP2, LDC2, MCR2, MRC2, STC2");
+    sg(19, 16, 3, "Generic MCRR, MRRC");
+    sg(19, 16, 4, "Generic MCRR2, MRRC2");
+    s(15, 12, "CBNZ, CBZ");
+    s(11, 8, "BFC, BFI, SBFX, UBFX");
+    s(7, 4, "CLZ");
+    s(3, 0, "SWP, SWPB");
+    printf("\n");
+
+    a = regs.id_isar1;
+    s(31, 28, "Jazelle");
+    f(27, 24, "Interworking NOT supported", "BX and T bit interworking supported", "BX, BLX, PC load, and T bit interworking supported", "BX, BLX, PC load, T bit, and ARM data processing interworking supported");
+    s(23, 20, "MOVT, other long immediates");
+    s(19, 16, "IT");
+    sg(15, 12, 1, "SXTB, SXTH, UXTB, UXTH");
+    sg(15, 12, 2, "SXTB16, SXTAB, SXTAB16, SXTAH, UXTB16, UXTAB, UXTAB16, UXTAG");
+    s(11, 8, "SRS, RFE");
+    s(7, 4, "LDM exception handling");
+    s(3, 0, "SETEND");
+    printf("\n");
+    
+    a = regs.id_isar2;
+    sg(31, 28, 1, "REV, REV16, REVSH");
+    sg(31, 28, 2, "RBIT");
+    s(27, 24, "MRS, MSR, exception return SUBS PC, LR");
+    sg(23, 20, 1, "UMLL, UMLAL");
+    sg(23, 20, 2, "UMAAL");
+    sg(19, 16, 1, "SMULL, SMLAL");
+    sg(19, 16, 2, "SMLABB, SMLABT, SMLALBB, SMLALBT, SMLALTB, SMLALTT, SMLATB, SMLATT, SMLAWB, SMLAWT, SMULBB, SMULBT, SMULTB, SMULTT, SMULWB, SMULWT");
+    sg(19, 16, 3, "SMLAD, SMLADX, SMLALD, SMLALDX, SMLSD, SMLSDX, SMLSLD, SMLSLDX, SMMLA, SMMLAR, SMMLS, SMMLSR, SMMUL, SMMULR, SMUAD, SMUADX, SMUSD, SMUSDX");
+    sg(15, 12, 1, "MLA");
+    sg(15, 12, 2, "MLS");
+    f(11, 8, "LDM/STM not interruptible", "LDM/STM restartable", "LDM/STM continuable");
+    sg(7, 4, 1, "PLD");
+    sg(7, 4, 3, "PLI");
+    sg(7, 4, 4, "PLDW");
+    s(3, 0, "LDRD, STRD");
+    printf("\n");
+
+    a = regs.id_isar3;
+    s(31, 28, "ENTERX, LEAVEX");
+    s(27, 24, "True NOP");
+    s(23, 20, "Thumb low-to-low MOV");
+    s(19, 16, "TBB, TBH");
+    uint32_t synch = (bits(a, 15, 12) << 4) | bits(regs.id_isar4, 23, 20);
+    g(synch, 0x10000, "LDREX, STREX");
+    g(synch, 0x10011, "CLREX, LDREXB, LDREXH, STREXB, STREXH");
+    g(synch, 0x100000, "CLREX, LDREXB, LDREXH, STREXB, STREXH");
+    s(11, 8, "SVC");
+    sg(7, 4, 1, "SSAT, USAT, Q bit");
+    sg(7, 4, 2, "Misc SIMD instructions, GE bits");
+    s(3, 0, "QADD, QDADD, QDSUB, QSUB, Q bit");
+    printf("\n");
+
+    a = regs.id_isar4;
+    s(31, 28, "SWP, SWPB (non-locking)");
+    s(27, 24, "M profile CPS, MRS, MSR");
+    s(19, 16, "DMB, DSB, ISB");
+    s(15, 12, "SMC");
+    s(11, 8, "Writeback (other than LDM, STM, PUSH, POP, SRS, RFE)");
+    sg(7, 4, 1, "Shifts of LSL 0-3");
+    sg(7, 4, 3, "Constant shifts");
+    sg(7, 4, 4, "Register-controlled shifts shifts");
+    sg(3, 0, 1, "LDRBT, LDRT, STRBT, STRT");
+    sg(3, 0, 2, "LDRHT, LDRSBT, LDRSHT, STRHT");
+
+#undef f
+#undef sg
+#undef g
+#undef s
+#undef R4
+#undef R13
+#undef R14
+}
+
+static uint32_t parse_hex(const char *optarg) {
     errno = 0;
     char *end;
     long long ret = strtoll(optarg, &end, 16);
@@ -301,6 +461,24 @@ uint32_t parse_hex(const char *optarg) {
         return (uint32_t) ret;
     }
 }
+
+struct regs {
+    uint32_t cpsr;
+    uint32_t ttbr0;
+    uint32_t ttbr1;
+    uint32_t ttbcr;
+    uint32_t contextidr;
+    uint32_t sctlr;
+    uint32_t scr;
+    uint32_t dbgdidr;
+    uint32_t dbgdrar;
+    uint32_t dbgdsar;
+    uint32_t id_dfr0;
+    uint32_t dbgdscr;
+    uint32_t tpidrprw;
+    uint32_t dacr;
+};
+
 
 int main(int argc, char **argv) {
     int c;
@@ -328,7 +506,7 @@ int main(int argc, char **argv) {
         {0, 0, 0, 0}
     };
     int idx;
-    while((c = getopt_long(argc, argv, "mMr012sl:w:L:W:uh:v:w:c:CPUdt:a:Ao:p:f", options, &idx)) != -1) {
+    while((c = getopt_long(argc, argv, "mMri012sl:w:L:W:uh:v:w:c:CPUdt:a:Ao:p:f", options, &idx)) != -1) {
         did_something = true;
         switch(c) {
         case 'r':
@@ -336,6 +514,9 @@ int main(int argc, char **argv) {
             printf("cpsr=%x ttbr0=%x ttbr1=%x ttbcr=%x contextidr=%x sctlr=%x scr=%x\n", regs.cpsr, regs.ttbr0, regs.ttbr1, regs.ttbcr, regs.contextidr, regs.sctlr, regs.scr);
             printf("dbgdidr=%x dbgdrar=%x dbgdsar=%x id_dfr0=%x dbgdscr=%x\n", regs.dbgdidr, regs.dbgdrar, regs.dbgdsar, regs.id_dfr0, regs.dbgdscr);
             printf("tpidrprw=%x dacr=%x\n", regs.tpidrprw, regs.dacr);
+            break;
+        case 'i':
+            do_cpuid_regs();
             break;
         case '0':
             assert(!syscall(8, 0, &regs));
@@ -484,6 +665,7 @@ int main(int argc, char **argv) {
 usage:
     printf("Usage: %s ...\n"
            "    -r:                    print some regs\n"
+           "    -i:                    print CPUID regs\n"
            "    -0:                    dump memory map at ttbr0\n"
            "    -1:                    dump memory map at ttbr1\n"
            "    -2:                    dump memory map at ttbr1-0x4000\n"
