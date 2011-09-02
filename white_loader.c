@@ -25,8 +25,9 @@ static addr_t find_hack_func(const struct binary *binary) {
 static addr_t lookup_sym(const struct binary *binary, const char *sym);
 
 static void insert_loader_stuff(struct binary *binary, const struct binary *kern) {
-    unsigned int class = binary->reserved[0];
-    addr_t patch_loc = b_read32(kern, b_sym(kern, "_kernel_pmap", MUST_FIND)) + spec(_50, 0x428,
+    unsigned int class = kern->reserved[0];
+    addr_t patch_loc = b_read32(kern, b_sym(kern, "_kernel_pmap", MUST_FIND))
+                            + spec(_50, 0x428,
                                    _43, 0x424,
                                    _armv6, 0x420);
     addr_t sysent = lookup_sym(kern, "_sysent");
@@ -85,8 +86,8 @@ static addr_t find_data_munged(range_t range, const char *to_find, int align, in
 static addr_t lookup_sym(const struct binary *binary, const char *sym) {
     // special cases - really should be done in some kind of generic way
     if(!strcmp(sym, "_sysent")) {
-        if(b_sym(binary, "_buf_attr", 0)) {
-            // 5.0
+        unsigned int class = binary->reserved[0];
+        if(class >= _50) {
             return resolve_ldr(binary, find_data(b_macho_segrange(binary, "__TEXT"), "75 30 ff e6 - .. .. .. .. .. .. .. .. 00 00 90 e5", 0, MUST_FIND));
         } else {
             return find_int32(b_macho_segrange(binary, "__DATA"), 0x861000, MUST_FIND) + 4;
@@ -181,6 +182,7 @@ int main(int argc, char **argv) {
             char *kern_fn;
             if(!(kern_fn = *argv++)) goto usage;
             b_load_macho(&kern, kern_fn);
+            kern.reserved[0] = classify(&kern);
             break;
         }
 #ifdef IMG3_SUPPORT
@@ -205,7 +207,6 @@ int main(int argc, char **argv) {
             struct binary to_load;
             b_init(&to_load);
             b_load_macho(&to_load, to_load_fn);
-            to_load.reserved[0] = classify(&to_load);
             if(to_load.mach->hdr->flags & MH_PREBOUND) die("prebound");
             if(arg[1] == 'P') {
                 b_relocate(&to_load, &kern, RELOC_DEFAULT, lookup_sym, 0xf0000000);
@@ -236,7 +237,6 @@ int main(int argc, char **argv) {
                 b_init(&to_load);
                 b_load_macho(&to_load, to_load_fn);
                 if(to_load.mach->hdr->flags & MH_PREBOUND) die("prebound");
-                to_load.reserved[0] = classify(&to_load);
                 b_relocate(&to_load, &kern, RELOC_DEFAULT, lookup_sym, b_allocate_from_macho_fd(fd));
                 b_inject_into_macho_fd(&to_load, fd, find_hack_func);
             }
@@ -257,7 +257,6 @@ int main(int argc, char **argv) {
             if(kern.valid) insert_loader_stuff(&to_load, &kern);
             addr_t sysent = apply_loader_stuff(&to_load);
             uint32_t slide = b_allocate_from_running_kernel(&to_load);
-            to_load.reserved[0] = classify(&to_load);
             b_relocate(&to_load, kern.valid ? &kern : NULL, RELOC_DEFAULT, lookup_sym, slide);
             b_inject_into_running_kernel(&to_load, sysent);
             break;
