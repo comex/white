@@ -1,5 +1,7 @@
 DATA = $(word 1,$(wildcard ./data ../data))
-CFLAGS += -fno-builtin -Wno-missing-field-initializers -DWATCHPOINTS -DTRACER -DCIRCULAR -I$(DATA)
+CFLAGS += -fno-builtin -Wno-missing-field-initializers -DCIRCULAR -I$(DATA)
+#CFLAGS += -DWATCHPOINTS -DTRACER
+CFLAGS += -DSPARTAN
 include $(DATA)/Makefile.common
 
 all: .data $(OUTDIR) $(OUTDIR)/white_loader kcode.dylib serialplease.dylib stuff

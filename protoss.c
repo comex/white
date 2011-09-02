@@ -166,6 +166,7 @@ static void twiddle_dbg(bool on) {
 }
 
 int protoss_go_watch(uint32_t address, uint32_t mask) {
+    (void) address; (void) mask;
 #ifdef WATCHPOINTS
     if(trace_going || watch_going) {
         IOLog("protoss_go_watch: already enabled\n");

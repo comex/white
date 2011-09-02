@@ -266,7 +266,9 @@ static int hook_putc() {
     putc_buf = buf;
     if(!buf) return -2;
     add_hook(conslog_putc, putc_hook, 0);
+#ifndef SPARTAN
     add_hook(what_putc, putc_hook, 0);
+#endif
     lck_mtx_unlock(putc_lck);
     return 0;
 }
