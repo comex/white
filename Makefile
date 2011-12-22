@@ -38,4 +38,4 @@ mem.dylib: mem.c
 
 clean: .clean
 	make -C $(DATA) clean
-	rm -rf stuff *.o kcode.dylib mem.dylib 
+	rm -rf stuff *.o kcode.dylib mem.dylib milk.dylib serialplease.dylib

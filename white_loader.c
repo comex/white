@@ -13,6 +13,7 @@
 #include <data/running_kernel.h>
 #include <data/mach-o/headers/loader.h>
 #include <data/mach-o/link.h>
+#include <data/mach-o/inject.h>
 #include <ctype.h>
 #include <data/ios-classify.h>
 
@@ -223,12 +224,6 @@ int main(int argc, char **argv) {
             if(!kern.valid) goto usage;
             char *out_kern = *argv++;
             if(!out_kern) goto usage;
-            b_macho_store(&kern, out_kern);
-
-            int fd = open(out_kern, O_RDWR);
-            if(fd == -1) {
-                edie("couldn't re-open output kc"); 
-            }
 
             if(!*argv) goto usage;
             char *to_load_fn;
@@ -237,10 +232,11 @@ int main(int argc, char **argv) {
                 b_init(&to_load);
                 b_load_macho(&to_load, to_load_fn);
                 if(to_load.mach->hdr->flags & MH_PREBOUND) die("prebound");
-                b_relocate(&to_load, &kern, RELOC_DEFAULT, lookup_sym, b_allocate_from_macho_fd(fd));
-                b_inject_into_macho_fd(&to_load, fd, find_hack_func);
+                b_relocate(&to_load, &kern, RELOC_DEFAULT, lookup_sym, b_allocate_vmaddr(&kern));
+                b_inject_macho_binary(&to_load, &kern, find_hack_func, false);
             }
-            close(fd);
+            
+            b_macho_store(&kern, out_kern);
 
             return 0;
         }

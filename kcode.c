@@ -28,13 +28,16 @@ static void get_return_addresses(struct frame *frame, void **returns, int n) {
 }
 
 static void *generic_hook(bool should_trace, void *old, struct apply_args *args) {
+    void *sp;
+    asm("mov %0, sp" : "=r"(sp));
     void *returns[6];
     get_return_addresses(&args->frame, returns, 6);
-    IOLog("hook%s: %p from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p pid=%d",
+    IOLog("hook%s: %p from:%p <- %p <- %p <- %p <- %p <- %p r0=%p r1=%p r2=%p r3=%p a5=%p a6=%p a7=%p sp=%p pid=%d",
         should_trace ? " (trace)" : "",
         ((struct hook_info *) old)->storeto,
         returns[0], returns[1], returns[2], returns[3], returns[4], returns[5],
         args->r0, args->r1, args->r2, args->r3, args->sp[0], args->sp[1], args->sp[2],
+        sp,
         proc_pid(current_proc()));
     if(should_trace) {
         protoss_go();
@@ -283,8 +286,27 @@ static int get_putc(user_addr_t buf, size_t size) {
     return result;
 }
 
+
+__attribute__((always_inline)) static inline void invalidate_tlb() {
+    asm volatile("mov r2, #0;"
+                 "mcr p15, 0, r2, c8, c7, 0;" // invalidate entire unified TLB
+                 "mcr p15, 0, r2, c8, c6, 0;" // invalidate entire data TLB
+                 "mcr p15, 0, r2, c8, c5, 0;" // invalidate entire instruction TLB
+                 "mcr p15, 0, r2, c7, c10, 4;" // DSB
+                 "mcr p15, 0, r2, c7, c5, 4;" // ISB
+                 "mcr p15, 0, r2, c7, c5, 6;" // branch predictor
+                 ::: "r2");
+}
+
+
 int do_something() {
-    return 0;
+    uint32_t ttbcr;
+    asm volatile("mrc p15, 0, %0, c2, c0, 2" : "=r"(ttbcr));
+    asm volatile("mcr p15, 0, %0, c2, c0, 2" :: "r"(ttbcr | 0x80000000));
+    asm volatile("isb");
+    invalidate_tlb();
+    asm volatile("mrc p15, 0, %0, c2, c0, 2" : "=r"(ttbcr));
+    return ttbcr;
 }
 
 // from the loader
