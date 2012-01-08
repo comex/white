@@ -1,6 +1,6 @@
 DATA = $(word 1,$(wildcard ./data ../data))
-CFLAGS += -fno-builtin -Wno-missing-field-initializers -DCIRCULAR -I$(DATA)
-#CFLAGS += -DWATCHPOINTS -DTRACER
+CFLAGS += -fno-builtin -Wno-missing-field-initializers -DCIRCULAR -DWATCHPOINTS -I$(DATA)
+#CFLAGS += -DTRACER
 CFLAGS += -DSPARTAN
 include $(DATA)/Makefile.common
 

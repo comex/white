@@ -1,6 +1,7 @@
 # int run_failsafe(&result, func, a1, a2)
 
 .arm
+.align 2
 .globl _run_failsafe
 _run_failsafe:
     push {r4-r7, lr}

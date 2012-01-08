@@ -1,4 +1,5 @@
 .arm
+.align 2
 .globl _trace_prefetch_handler
 _trace_prefetch_handler:
     ;# is this actually a breakpoint?

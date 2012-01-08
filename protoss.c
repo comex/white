@@ -92,7 +92,7 @@ static struct watch_entry *watch_start;
 extern volatile struct watch_entry *watch_ptr;
 
 extern uint32_t thread_exception_return[]
-asm("$_A_80_00_0c_f1_90_9f_1d_ee_XX_83_99_e5_XX_50_98_e5_00_00_55_e3");
+asm("$_A_80_00_0c_f1_90_9f_1d_ee_XX_XX_99_e5_XX_50_98_e5_00_00_55_e3");
 static uint32_t ter_orig[4];
 
 void watch_prefetch_handler();

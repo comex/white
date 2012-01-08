@@ -1,4 +1,5 @@
 .arm
+.align 2
 .globl _undef_handler
 _undef_handler:
     # ldr pc, _undef_saved
