@@ -23,7 +23,7 @@ static addr_t find_hack_func(const struct binary *binary) {
     return b_sym(binary, "_IOFindBSDRoot", MUST_FIND | TO_EXECUTE);
 }
 
-static addr_t lookup_sym(const struct binary *binary, const char *sym);
+static addr_t lookup_sym(void *binary, const char *sym);
 
 static void insert_loader_stuff(struct binary *binary, const struct binary *kern) {
     unsigned int class = kern->reserved[0];
@@ -31,7 +31,7 @@ static void insert_loader_stuff(struct binary *binary, const struct binary *kern
                             + spec(_50, 0x428,
                                    _43, 0x424,
                                    _armv6, 0x420);
-    addr_t sysent = lookup_sym(kern, "_sysent");
+    addr_t sysent = lookup_sym((void *) kern, "_sysent");
     
     CMD_ITERATE(binary->mach->hdr, cmd) {
         if(cmd->cmd == LC_ID_DYLIB) {
@@ -84,8 +84,9 @@ static addr_t find_data_munged(range_t range, const char *to_find, int align, in
 }
 
 // gigantic hack
-static addr_t lookup_sym(const struct binary *binary, const char *sym) {
+static addr_t lookup_sym(void *_binary, const char *sym) {
     // special cases - really should be done in some kind of generic way
+    struct binary *binary = _binary;
     if(!strcmp(sym, "_sysent")) {
         unsigned int class = binary->reserved[0];
         if(class >= _50) {
@@ -210,9 +211,9 @@ int main(int argc, char **argv) {
             b_load_macho(&to_load, to_load_fn);
             if(to_load.mach->hdr->flags & MH_PREBOUND) die("prebound");
             if(arg[1] == 'P') {
-                b_relocate(&to_load, &kern, RELOC_DEFAULT, lookup_sym, 0xf0000000);
+                b_relocate(&to_load, &kern, RELOC_DEFAULT, lookup_sym, &kern, 0xf0000000);
             } else {
-                b_relocate(&to_load, &kern, RELOC_EXTERN_ONLY, lookup_sym, 0);
+                b_relocate(&to_load, &kern, RELOC_EXTERN_ONLY, lookup_sym, &kern, 0);
             }
             insert_loader_stuff(&to_load, &kern);
             b_macho_store(&to_load, output_fn);
@@ -232,7 +233,7 @@ int main(int argc, char **argv) {
                 b_init(&to_load);
                 b_load_macho(&to_load, to_load_fn);
                 if(to_load.mach->hdr->flags & MH_PREBOUND) die("prebound");
-                b_relocate(&to_load, &kern, RELOC_DEFAULT, lookup_sym, b_allocate_vmaddr(&kern));
+                b_relocate(&to_load, &kern, RELOC_DEFAULT, lookup_sym, &kern, b_allocate_vmaddr(&kern));
                 b_inject_macho_binary(&to_load, &kern, find_hack_func, false);
             }
             
@@ -253,7 +254,8 @@ int main(int argc, char **argv) {
             if(kern.valid) insert_loader_stuff(&to_load, &kern);
             addr_t sysent = apply_loader_stuff(&to_load);
             uint32_t slide = b_allocate_from_running_kernel(&to_load);
-            b_relocate(&to_load, kern.valid ? &kern : NULL, RELOC_DEFAULT, lookup_sym, slide);
+            struct binary *b = kern.valid ? &kern : NULL;
+            b_relocate(&to_load, b, RELOC_DEFAULT, lookup_sym, b, slide);
             b_inject_into_running_kernel(&to_load, sysent);
             break;
         }
