@@ -263,7 +263,7 @@ int main(int argc, char **argv) {
             ok = true;
             char *baseaddr_hex;
             if(!(baseaddr_hex = *argv++)) goto usage;
-            unload_from_running_kernel(parse_hex_uint32(baseaddr_hex));
+            unload_from_running_kernel(parse_hex_addr(baseaddr_hex));
             break;
         }
 #endif
