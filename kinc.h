@@ -82,7 +82,8 @@ LC int32_t OSAddAtomic(int32_t amount, volatile int32_t *address);
 LC void *IOMalloc(size_t size);
 LC void IOFree(void *p);
 
-LC int vm_allocate(vm_map_t map, vm_address_t *addr, vm_size_t size, int flags);
+LC int vm_allocate(vm_map_t map, vm_address_t *addr, vm_size_t size, int flags)
+asm("$_T_b0_b5_02_af_89_b0_4b_f6_ec_74");
 
 LC int vm_deallocate(register vm_map_t map, vm_offset_t start, vm_size_t size);
 
@@ -183,8 +184,9 @@ asm("__ZN18IOMemoryDescriptor3mapEm");
 LC void *IOMemoryDescriptor_getPhysicalAddress(void *descriptor)
 asm("__ZN18IOMemoryDescriptor18getPhysicalAddressEv");
 
-LC void *IOMemoryMap_getAddress(void *map)
-asm("__ZN11IOMemoryMap10getAddressEv");
+static inline void *IOMemoryMap_getAddress(void *map) {
+    return (void *) (uint32_t) FIXED_METACALL(uint64_t, 24, map);
+}
 
 LC void *IOService_serviceMatching(const char *buf, void *table)
 asm("__ZN9IOService15serviceMatchingEPKcP12OSDictionary");

@@ -21,7 +21,10 @@ endif
 	$(GCC_armv7) $(CFLAGS) -c -o $@ $<
 stuff: stuff.c
 	$(GCC_armv7) $(CFLAGS) -o stuff stuff.c
-
+ifneq "$(LDID)" ""
+	$(LDID) -S stuff
+endif
+	
 GCC_DYLIB = LD_NO_COMPACT_LINKEDIT=1 $(GCC_armv7) $(CFLAGS) -dynamiclib -nostdlib -nodefaultlibs -lgcc -undefined dynamic_lookup -read_only_relocs suppress -segprot __TEXT rwx rwx -fblocks
 
 kcode.dylib: kcode.o black.o creep.o creepasm.o protoss.o protossasm.o failsafe.o

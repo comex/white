@@ -27,10 +27,21 @@ static addr_t lookup_sym(void *binary, const char *sym);
 
 static void insert_loader_stuff(struct binary *binary, const struct binary *kern) {
     unsigned int class = kern->reserved[0];
-    addr_t patch_loc = b_read32(kern, b_sym(kern, "_kernel_pmap", MUST_FIND))
-                            + spec(_50, 0x428,
-                                   _43, 0x424,
-                                   _armv6, 0x420);
+    addr_t pmap_offset;
+    if(class >= _50) {
+        addr_t str = find_string(b_macho_segrange(kern, "__TEXT"), "\"pmap_page_protect: bad pve entry", 0, MUST_FIND);
+        addr_t search = find_int32(b_macho_segrange(kern, "__TEXT"), str, MUST_FIND) - 0x200;
+        uint32_t val;
+        while(b_read16(kern, search) != 0x2000 ||
+              ((val = b_read32(kern, search + 2)) & 0xfff0) != 0xf8d0) {
+            search += 2;
+        }
+        pmap_offset = (val & 0xfff0000) >> 16;
+    } else {
+        pmap_offset = class >= _43 ? 0x424 : 0x420;
+    }
+        
+    addr_t patch_loc = b_read32(kern, b_sym(kern, "_kernel_pmap", MUST_FIND)) + pmap_offset;
     addr_t sysent = lookup_sym((void *) kern, "_sysent");
     
     CMD_ITERATE(binary->mach->hdr, cmd) {
